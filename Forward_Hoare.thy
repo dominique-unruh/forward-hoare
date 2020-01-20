@@ -1,6 +1,7 @@
 theory Forward_Hoare
   imports "HOL-Library.Rewrite" "HOL-Eisbach.Eisbach" Main
   keywords "do" :: prf_decl % "proof"
+    and "do_prf" :: prf_goal % "proof"
 begin
 
 ML \<open>
@@ -72,7 +73,8 @@ type hoare = {
   program_fragment: program,
   program_fragment_const: term,
   precondition: string,
-  postcondition: string
+  postcondition: string,
+  valid: thm
 }
 \<close>
 
@@ -111,7 +113,7 @@ fun add_invariant binding invariant ctxt : invariant * Proof.context = let
 \<close>
 
 ML \<open>
-fun add_hoare binding program range (precondition:invariant) (postcondition:invariant) ctxt = let
+fun add_hoare1 binding program range (precondition:invariant) (postcondition:invariant) ctxt = let
   fun bind suffix = Binding.suffix_name suffix binding
   val program_fragment = extract_range program range
   val program_fragment_ct = program_to_cterm ctxt program_fragment
@@ -121,9 +123,10 @@ fun add_hoare binding program range (precondition:invariant) (postcondition:inva
   val info : hoare = {binding=binding, range=range,
     precondition=Binding.name_of (#binding precondition),
     postcondition=Binding.name_of (#binding postcondition),
-    program_fragment=program_fragment, program_fragment_const=program_fragment_const
+    program_fragment=program_fragment, program_fragment_const=program_fragment_const,
+    valid= @{thm TrueI}
   }
-  val ctxt = add_hoare0 info ctxt
+  (* val ctxt = add_hoare0 info ctxt *)
   in (info,ctxt) end
 \<close>
 
@@ -132,20 +135,52 @@ definition "pc_imp pc1 pc2 \<longleftrightarrow> (\<forall>m. pc1 m \<longrighta
 
 section \<open>Experiments\<close>
 
-
+ML \<open>
+structure Do_Prf = Proof_Data(
+  type T = Proof.state -> Proof.state
+  fun init _ = fn _ => error "don't call this"
+)
+\<close>
 
 ML \<open>
 val test_prog = [Set ("x", 5), Guess "y", Add ("x", "y")] 
 \<close>
 
 ML \<open>
+fun do_prf_cmd source state = let
+  val expr = ML_Context.expression (Input.pos_of source) 
+    (ML_Lex.read "Context.>> (Context.map_proof (Do_Prf.put (" @ ML_Lex.read_source source @ ML_Lex.read ")))")
+  val f = Context.proof_map expr (Proof.context_of state) |> Do_Prf.get
+  val state = f state
+  in state end
+
 fun do_cmd source = let
-  val expr = ML_Context.expression (Input.pos_of source) (ML_Lex.read "Theory.local_setup (" @ ML_Lex.read_source source @ ML_Lex.read ")")
+  val expr = ML_Context.expression (Input.pos_of source) (ML_Lex.read "Theory.local_setup (" @ ML_Lex.read_source source @ ML_Lex.read ")")  
   in Context.proof_map expr |> Proof.map_context end
+
 val _ =
   Outer_Syntax.command \<^command_keyword>\<open>do\<close> "do something to the context in a proof"
     (Parse.ML_source >> (Toplevel.proof o do_cmd));
+  Outer_Syntax.command \<^command_keyword>\<open>do_prf\<close> "do something to the context in a proof"
+    (Parse.ML_source >> (Toplevel.proof o do_prf_cmd));
 \<close>
+
+ML \<open>
+  fun prove binding after_qed prop state = 
+Proof.have true NONE after_qed [] [] [((binding,[]),[(prop,[])])] true state |> \<^print> |> snd
+\<close>
+
+
+lemma False
+proof -
+  do_prf \<open>fn state => let 
+fun after_qed (ctxt,thms) state = state
+val state = prove \<^binding>\<open>xxxx\<close> after_qed \<^prop>\<open>1=1\<close> state
+in state end
+\<close>
+    by auto
+  thm xxxx
+  oops
 
 lemma pc_impI[intro]: "(\<And>m. pc1 m \<Longrightarrow> pc2 m) \<Longrightarrow> pc_imp pc1 pc2"
   unfolding pc_imp_def by auto
@@ -335,13 +370,32 @@ lemma hoare_conseq':
   using assms unfolding hoare_def pc_imp_def by blast
 
 ML \<open>
-fun hoare_thm ctxt (hoare:string) : cterm = let
-  val hoare = get_hoare ctxt hoare |> the
+fun hoare_thm ctxt (hoare:hoare) : cterm = let
+  (* val hoare = get_hoare ctxt hoare |> the *)
   val pre = #precondition hoare |> get_invariant ctxt |> the |> #const
   val post = #postcondition hoare |> get_invariant ctxt |> the |> #const
   val prog = #program_fragment_const hoare
   val prop = \<^const>\<open>hoare\<close> $ pre $ prog $ post |> HOLogic.mk_Trueprop
   in Thm.cterm_of ctxt prop end
+\<close>
+
+ML \<open>
+fun update_hoare_valid new_valid ({binding, range, program_fragment, program_fragment_const, precondition,
+  postcondition, valid=_}:hoare) : hoare =
+ {binding=binding, range=range, program_fragment=program_fragment,
+  program_fragment_const=program_fragment_const, precondition=precondition,
+  postcondition=postcondition,
+  valid=new_valid}
+\<close>
+
+
+ML \<open>
+fun add_hoare2 binding program range (precondition:invariant) (postcondition:invariant) state : hoare * Proof.state = let
+  val (info,state) = Proof.map_context_result (add_hoare1 binding program range precondition postcondition) state
+  fun after_qed (_,[[valid]]) = Proof.map_context (add_hoare0 (update_hoare_valid valid info))
+  val valid_prop = hoare_thm (Proof.context_of state) info |> Thm.term_of
+  val state = prove (Binding.suffix_name "_valid" binding) after_qed valid_prop state
+  in (info,state) end
 \<close>
 
 lemma semantics_seq: "semantics (p@q) m = 
@@ -377,27 +431,21 @@ proof
 
   define prog where "prog = [Set STR ''x'' 5, Guess STR ''y'', Add STR ''x'' STR ''y'']"
 
-  do \<open>fn ctxt => let
-    val (start_invariant,ctxt) = add_invariant \<^binding>\<open>start\<close> \<^cterm>\<open>(\<lambda>m::mem. True)\<close> ctxt
-    val (hoare,ctxt) = add_hoare \<^binding>\<open>start\<close> test_prog (0,0) start_invariant start_invariant ctxt
+  do_prf \<open>fn state => let
+    val (start_invariant,state) = Proof.map_context_result (add_invariant \<^binding>\<open>start\<close> \<^cterm>\<open>(\<lambda>m::mem. True)\<close>) state
+    val (hoare,state) = add_hoare2 \<^binding>\<open>start\<close> test_prog (0,0) start_invariant start_invariant state
     val _ = \<^print> hoare
-  in ctxt end\<close>
+    in state end\<close>
+
+    unfolding start_prog_def by simp
 
   (* Step 1: Set x 5 *)
 
-  do \<open>fn ctxt => let
-    val (post,ctxt) = add_invariant \<^binding>\<open>step1\<close> \<^cterm>\<open>(postcondition_trivial (Set STR ''x'' 5) start_inv)\<close> ctxt
-    val start = get_invariant ctxt "start" |> the
-    val (hoare,ctxt) = add_hoare \<^binding>\<open>step1\<close> test_prog (0,1) start post ctxt 
-    in ctxt end\<close>
-
-  thm step1_inv_def
-
-  ML_val \<open>
-    hoare_thm \<^context> "step1"
-  \<close>
-
-  have step1_valid: "hoare start_inv step1_prog step1_inv"
+  do_prf \<open>fn state => let
+    val (post,state) = Proof.map_context_result (add_invariant \<^binding>\<open>step1\<close> \<^cterm>\<open>(postcondition_trivial (Set STR ''x'' 5) start_inv)\<close>) state
+    val start = get_invariant (Proof.context_of state) "start" |> the
+    val (hoare,state) = add_hoare2 \<^binding>\<open>step1\<close> test_prog (0,1) start post state
+    in state end\<close>
     using step1_inv_def step1_prog_def by (rule valid)
 
   have step1_x5: "pc_imp step1_inv (\<lambda>m. m STR ''x'' = 5)"
@@ -405,15 +453,12 @@ proof
 
   (* Step 2: Guess y *)
 
-  do \<open>fn ctxt => let
-    val (post,ctxt) = add_invariant \<^binding>\<open>step2\<close>
-       \<^cterm>\<open>postcondition_pick (Guess STR ''y'') (-5) step1_inv\<close> ctxt
-    val pre = get_invariant ctxt "step1" |> the
-    val (hoare,ctxt) = add_hoare \<^binding>\<open>step2\<close> test_prog (1,2) pre post ctxt 
-    in ctxt end\<close>
-
-  ML_val \<open>hoare_thm \<^context> "step2"\<close>
-  have step2_valid: "hoare step1_inv step2_prog step2_inv"
+  do_prf \<open>fn state => let
+    val (post,state) = Proof.map_context_result (add_invariant \<^binding>\<open>step2\<close>
+         \<^cterm>\<open>postcondition_pick (Guess STR ''y'') (-5) step1_inv\<close>) state
+    val pre = get_invariant (Proof.context_of state) "step1" |> the
+    val (hoare,state) = add_hoare2 \<^binding>\<open>step2\<close> test_prog (1,2) pre post state
+    in state end\<close>
     using step2_inv_def step2_prog_def by (rule valid)
 
   have step2_x5: "pc_imp step2_inv (\<lambda>m. m STR ''x'' = 5)"
@@ -430,15 +475,12 @@ proof
 
   (* Step 3: Add x y *)
 
-  do \<open>fn ctxt => let
-    val (post,ctxt) = add_invariant \<^binding>\<open>step3\<close>
-       \<^cterm>\<open>(postcondition_trivial (Add STR ''x'' STR ''y'') step2_inv)\<close> ctxt
-    val pre = get_invariant ctxt "step2" |> the
-    val (hoare,ctxt) = add_hoare \<^binding>\<open>step3\<close> test_prog (2,3) pre post ctxt 
-    in ctxt end\<close>
-
-  ML_val \<open>hoare_thm \<^context> "step3"\<close>
-  have step3_valid: "hoare step2_inv step3_prog step3_inv"
+  do_prf \<open>fn state => let
+    val (post,state) = Proof.map_context_result (add_invariant \<^binding>\<open>step3\<close>
+       \<^cterm>\<open>(postcondition_trivial (Add STR ''x'' STR ''y'') step2_inv)\<close>) state
+    val pre = get_invariant (Proof.context_of state) "step2" |> the
+    val (hoare,state) = add_hoare2 \<^binding>\<open>step3\<close> test_prog (2,3) pre post state
+    in state end\<close>
     using step3_inv_def step3_prog_def by (rule valid, simp)
 
   have step3_y5: "pc_imp step3_inv (\<lambda>m. m STR ''y'' = -5)"
