@@ -2,17 +2,20 @@ theory Test
   imports Demo_Hoare
 begin
 
-
 lemma True
 proof 
 
-  do \<open>fn ctxt => let
+  program (demo_logic) prog: \<open>[Set STR ''x'' 5, Guess STR ''y'', Add STR ''x'' STR ''y'']\<close>
+
+(*   do \<open>fn ctxt => let
     val prog = Demo_Hoare_Logic.ex_program [Set ("x", 5), Guess "y", Add ("x", "y")]
     val ctxt = add_program0 {binding=\<^binding>\<open>prog\<close>, logic="demo_logic", code=prog} ctxt
-    in ctxt end\<close>
+    in ctxt end\<close> *)
 
+(* TODO: should be handled by program-command *)
   define prog where "prog = [Set STR ''x'' 5, Guess STR ''y'', Add STR ''x'' STR ''y'']"
 
+(* TODO: should be handled by program-command *)
   do \<open>snd o add_invariant \<^binding>\<open>start\<close> \<^term>\<open>(\<lambda>m::mem. True)\<close>\<close>
 
   (* Step 1: Set x 5 *)

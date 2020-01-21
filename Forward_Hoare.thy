@@ -2,6 +2,7 @@ theory Forward_Hoare
   imports "HOL-Library.Rewrite" "HOL-Eisbach.Eisbach" Main
   keywords "do" :: prf_decl % "proof"
     and "do_prf" :: prf_goal % "proof"
+    and "program" :: prf_decl % "proof"
 begin
 
 ML \<open>
@@ -96,10 +97,6 @@ fun def' binding t lthy =
 fun def binding t lthy = def' binding t lthy |> snd
 \<close>
 
-type_synonym var = String.literal
-type_synonym mem = \<open>var \<Rightarrow> int\<close>
-datatype instruction = Add var var | Set var int | Guess var
-type_synonym program = "instruction list"
 
 ML \<open>
 type var = string
@@ -278,6 +275,28 @@ fun add_hoare3 binding (program:string option) range (precondition:string) (post
     val (postcondition,state) = Proof.map_context_result (add_invariant binding postcondition) state
     val (_,state) = add_hoare2 binding program range precondition postcondition state
 in state end
+\<close>
+
+
+ML \<open>
+fun define_program_command logic binding content (ctxt:Proof.context) : Proof.context = let
+  val logic' = get_logic' ctxt logic |> the
+  val program = #read_program logic' ctxt content
+  val ctxt = add_program0 {binding=binding, logic=logic, code=program} ctxt
+in ctxt end
+\<close>
+
+
+ML \<open>
+val _ = let
+  val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
+  val name_parser = Parse.binding --| Parse.$$$ ":"
+  val content_parser = Parse.embedded
+  val parser = logic_parser -- name_parser -- content_parser
+in
+  Outer_Syntax.command \<^command_keyword>\<open>program\<close> "do something to the context in a proof"
+    (parser >> (fn ((logic,name),content) => Toplevel.proof (Proof.map_context (define_program_command logic name content))))
+end
 \<close>
 
 
