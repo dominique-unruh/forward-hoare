@@ -1,27 +1,11 @@
 theory Demo_Hoare
-  imports Forward_Hoare
+  imports Main Forward_Hoare
 begin
 
 type_synonym var = String.literal
 type_synonym mem = \<open>var \<Rightarrow> int\<close>
 datatype instruction = Add var var | Set var int | Guess var
 type_synonym "program" = "instruction list"
-
-ML \<open>
-datatype instruction = Add of var*var | Set of var*int | Guess of var
-  fun instruction_to_term (Set (x, i)) = \<^const>\<open>Set\<close> $ HOLogic.mk_literal x $ HOLogic.mk_number HOLogic.intT i
-    | instruction_to_term (Guess x) = \<^const>\<open>Guess\<close> $ HOLogic.mk_literal x
-    | instruction_to_term (Add (x,y)) = \<^const>\<open>Add\<close> $ HOLogic.mk_literal x $ HOLogic.mk_literal y
-  fun program_to_term p = map instruction_to_term p |> HOLogic.mk_list \<^typ>\<open>instruction\<close>
-  fun term_to_instruction (Const (\<^const_name>\<open>Set\<close>,_) $ x $ n) =
-            Set (HOLogic.dest_literal x, snd (HOLogic.dest_number n))
-    | term_to_instruction (Const (\<^const_name>\<open>Guess\<close>,_) $ x) =
-            Guess (HOLogic.dest_literal x)
-    | term_to_instruction (Const (\<^const_name>\<open>Add\<close>,_) $ x $ y) =
-            Add (HOLogic.dest_literal x, HOLogic.dest_literal y)
-    | term_to_instruction t = raise TERM("term_to_instruction",[t])
-  fun term_to_program t = HOLogic.dest_list t |> map term_to_instruction
-\<close>
 
 fun semantics1 :: "instruction \<Rightarrow> mem \<Rightarrow> mem set" where
   "semantics1 (Set x i) m = {m(x:=i)}"
@@ -32,35 +16,10 @@ fun semantics :: "program \<Rightarrow> mem \<Rightarrow> mem set" where
   "semantics [] m = {m}"
 | "semantics (c#p) m = (\<Union>m'\<in>semantics1 c m. semantics p m')"
 
-type_synonym invariant = "mem \<Rightarrow> bool"
+type_synonym "invariant" = "mem \<Rightarrow> bool"
 
 definition hoare :: "invariant \<Rightarrow> program \<Rightarrow> invariant \<Rightarrow> bool" where
   "hoare A p B \<longleftrightarrow> (\<forall>m. A m \<longrightarrow> (\<exists>m'\<in>semantics p m. B m'))"
-
-
-ML \<open>
-structure Demo_Hoare_Logic = Hoare_Logic(
-  type program = instruction list
-  type range = int * int
-
-  val binding = \<^binding>\<open>demo_logic\<close>
-
-  fun read_program ctxt str = let
-    val t = Syntax.read_term ctxt str
-    val p = term_to_program t
-  in p end
-    
-  fun read_range ctxt str = error "read_range"
-
-  fun hoare_thm ctxt pre prog post = \<^const>\<open>hoare\<close> $ pre $ prog $ post |> HOLogic.mk_Trueprop
-
-  fun valid_range (program:program) ((start,endd):range) =
-    start <= endd andalso start >= 0 andalso endd <= length program
-
-  fun extract_range (program:program) ((start,endd):range) : term =
-    program |> drop start |> take (endd-start) |> program_to_term
-)
-\<close>
 
 
 fun postcondition_trivial :: "instruction \<Rightarrow> invariant \<Rightarrow> invariant" where
@@ -108,12 +67,6 @@ lemma pc_impI[intro]: "(\<And>m. pc1 m \<Longrightarrow> pc2 m) \<Longrightarrow
 
 lemma pc_impD[dest]: "pc_imp pc1 pc2 \<Longrightarrow> pc1 m \<Longrightarrow> pc2 m"
   unfolding pc_imp_def by auto
-
-ML \<open>
-fun use_facts_tac ctxt thms = 
-  EVERY' (map (fn thm => forward_tac ctxt [thm COMP @{thm pc_impD}]) (rev (tl thms)))
-  THEN' (dresolve_tac ctxt [hd thms COMP @{thm pc_impD}])
-\<close>
 
 lemma hoare_conseq:
   assumes "pc_imp A A'"
@@ -275,14 +228,7 @@ lemmas wp = wp_Add wp_Set
 
 
 
-ML \<open>
-
-(* Contract: valid_range = true *)
-(* fun merge_ranges (_:program) ((s1,e1):Demo_Hoare_Logic.range) ((s2,e2):range) : range option =
-  if e1=s2 then SOME (s1,e2) else NONE *)
-\<close>
-
-
+ML_file "demo_hoare.ML"
 
 
 end
