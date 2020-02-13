@@ -57,7 +57,8 @@ fun def' binding t lthy =
       val ((const,_),lthy) = Local_Theory.define ((binding,NoSyn),((thm_binding,[]),t)) lthy
       val _ = tracing ("Defining " ^ string_of_binding_const binding ^ " := " ^ Syntax.string_of_term lthy t)
   in (const,lthy) end
-fun def binding t lthy = def' binding t lthy |> snd
+(* fun def binding t lthy = def' binding t lthy |> snd *)
+fun def'' binding t = Proof.map_context_result (def' binding t)
 
 type var = string
 type program = { binding: binding, code: ex_program, logic: string }
@@ -115,7 +116,7 @@ fun add_invariant binding (invariant:term) ctxt : invariant * Proof.context = le
   val ctxt = add_invariant0 info ctxt
   in (info,ctxt) end
 
-fun add_hoare1 binding (program:program) range (precondition:invariant) (postcondition:invariant) (ctxt:Proof.context) = let
+(* fun add_hoare_invalid binding (program:program) range (precondition:invariant) (postcondition:invariant) (ctxt:Proof.context) = let
   fun bind suffix = Binding.suffix_name suffix binding
   val logic = get_logic (Proof_Context.theory_of ctxt) (#logic program) |> the
   val program_fragment = (#extract_range logic) (#code program) range
@@ -128,10 +129,9 @@ fun add_hoare1 binding (program:program) range (precondition:invariant) (postcon
     postcondition=Binding.name_of (#binding postcondition),
     program_fragment_const=program_fragment_const,
     program=program |> #binding |> Binding.name_of,
-    valid= @{thm reflexive}
+    valid= @{thm Pure.asm_rl}
   }
-  (* val ctxt = add_hoare0 info ctxt *)
-  in (info,ctxt) end
+  in (info,ctxt) end *)
 
 structure Do_Prf = Proof_Data(
   type T = Proof.state -> Proof.state
@@ -175,23 +175,59 @@ fun update_hoare_valid new_valid ({binding, range, program_fragment_const, preco
     program=program,
     valid=new_valid}
 
-fun add_hoare2 binding (program:program) range (precondition:invariant) (postcondition:invariant) state : hoare * Proof.state = let
-  val (info,state) = Proof.map_context_result (add_hoare1 binding program range precondition postcondition) state
-  fun after_qed (_,[[valid]]) = Proof.map_context (add_hoare0 (update_hoare_valid valid info))
+fun add_hoare2 binding after_qed0 (program:program) range (precondition:invariant) (postcondition:invariant) state : hoare * Proof.state = let
+  fun bind suffix = Binding.suffix_name suffix binding
+  val logic = get_logic (Proof.theory_of state) (#logic program) |> the
+  val program_fragment = (#extract_range logic) (#code program) range
+  val _ = tracing ("Program fragment: " ^ Syntax.string_of_term (Proof.context_of state) program_fragment)
+  val (program_fragment_const,state) = 
+      def'' (bind "_prog") program_fragment state
+  val info : hoare = {binding=binding, range=range,
+    precondition=Binding.name_of (#binding precondition),
+    postcondition=Binding.name_of (#binding postcondition),
+    program_fragment_const=program_fragment_const,
+    program=program |> #binding |> Binding.name_of,
+    valid= @{thm Pure.asm_rl} (* Arbitrary theorem here *)
+  }
+  (* val (info,state) = Proof.map_context_result (add_hoare_invalid binding program range precondition postcondition) state *)
+  fun after_qed (_,validss) = case validss of [[valid]] =>
+        after_qed0 (Proof.map_context (add_hoare0 (update_hoare_valid valid info)), valid)
+    | _ => raise Match
   val valid_prop = hoare_thm (Proof.context_of state) info |> Thm.term_of
   val state = prove (Binding.suffix_name "_valid" binding) after_qed valid_prop state
   in (info,state) end
 
-fun add_hoare3 binding (program:string option) range (precondition:string) (postcondition:term) state = let
-    val ctxt = Proof.context_of state
-    val program = case program of 
-      SOME program => program
-    | NONE => get_current_program ctxt |> the
-    val program = get_program ctxt program |> the
-    val precondition = case get_invariant (Proof.context_of state) precondition of
-      SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
-    val (postcondition,state) = Proof.map_context_result (add_invariant binding postcondition) state
-    val (_,state) = add_hoare2 binding program range precondition postcondition state
+fun new_hoare binding after_qed0 (program:string option) range (precondition:string) (postcondition:term) state = let
+  val ctxt = Proof.context_of state
+  val program = case program of 
+    SOME program => program
+  | NONE => get_current_program ctxt |> the
+  val program = get_program ctxt program |> the
+  val precondition = case get_invariant ctxt precondition of
+    SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
+  val (postcondition,state) = Proof.map_context_result (add_invariant binding postcondition) state
+  (* val (_,state) = add_hoare2 binding after_qed0 program range precondition postcondition state *)
+  fun bind suffix = Binding.suffix_name suffix binding
+  val logic = get_logic (Proof.theory_of state) (#logic program) |> the
+  val program_fragment = (#extract_range logic) (#code program) range
+  val _ = tracing ("Program fragment: " ^ Syntax.string_of_term (Proof.context_of state) program_fragment)
+  val (program_fragment_const,state) = 
+      def'' (bind "_prog") program_fragment state
+  (* Not valid yet: the theorem is invalid *)
+  val info : hoare = {binding=binding, range=range,
+    precondition=Binding.name_of (#binding precondition),
+    postcondition=Binding.name_of (#binding postcondition),
+    program_fragment_const=program_fragment_const,
+    program=program |> #binding |> Binding.name_of,
+    valid= @{thm reflexive}
+  }
+  val valid_prop = hoare_thm (Proof.context_of state) info |> Thm.term_of
+  (* val (info,state) = Proof.map_context_result (add_hoare_invalid binding program range precondition postcondition) state *)
+  fun after_qed (_,validss) = case validss of [[valid]] =>
+      after_qed0 (Proof.map_context (add_hoare0 (update_hoare_valid valid info)), valid)
+    | _ => raise Match
+  val state = prove (Binding.suffix_name "_valid" binding) after_qed valid_prop state
+
 in state end
 
 fun define_program_command logic binding content (ctxt:Proof.context) : Proof.context = let

@@ -2,6 +2,8 @@ theory Test
   imports Demo_Hoare
 begin
 
+(* ML_file "test.ML" *)
+
 
 lemma True
 proof 
@@ -20,7 +22,7 @@ proof
 
   (* Step 1: Set x 5 *)
 
-  do_prf \<open>Forward_Hoare.add_hoare3 \<^binding>\<open>step1\<close> NONE (Demo_Hoare.ex_range (0,1)) "start"
+  do_prf \<open>Forward_Hoare.new_hoare \<^binding>\<open>step1\<close> fst NONE (Demo_Hoare.ex_range (0,1)) "start"
      \<^term>\<open>(postcondition_trivial (Set STR ''x'' 5) start_inv)\<close>\<close>
     using step1_inv_def step1_prog_def by (rule valid)
 
@@ -29,7 +31,7 @@ proof
 
   (* Step 2: Guess y *)
 
-  do_prf \<open>Forward_Hoare.add_hoare3 \<^binding>\<open>step2\<close> NONE (Demo_Hoare.ex_range (1,2)) "step1"
+  do_prf \<open>Forward_Hoare.new_hoare \<^binding>\<open>step2\<close> fst NONE (Demo_Hoare.ex_range (1,2)) "step1"
     \<^term>\<open>postcondition_pick (Guess STR ''y'') (-5) step1_inv\<close>\<close>
     using step2_inv_def step2_prog_def by (rule valid)
 
@@ -47,7 +49,11 @@ proof
 
   (* Step 3: Add x y *)
 
-  do_prf \<open>Forward_Hoare.add_hoare3 \<^binding>\<open>step3\<close> NONE (Demo_Hoare.ex_range (2,3)) "step2"
+  ML_val \<open>
+    Forward_Hoare.Hoare_Data.get \<^context>
+  \<close>
+
+  do_prf \<open>Forward_Hoare.new_hoare \<^binding>\<open>step3\<close> fst NONE (Demo_Hoare.ex_range (2,3)) "step2"
     \<^term>\<open>(postcondition_trivial (Add STR ''x'' STR ''y'') step2_inv)\<close>\<close>
     using step3_inv_def step3_prog_def by (rule valid, simp)
 
