@@ -100,7 +100,7 @@ lemma hoareI:
 
 lemma valid_Add:
   assumes "B \<equiv> postcondition_trivial (Add x y) A"
-  assumes "p \<equiv> [Add x y]"
+  defines "p \<equiv> [Add x y]"
   assumes distinct: "x \<noteq> y"
   shows "hoare A p B"
   apply (rule hoareI)
@@ -109,7 +109,7 @@ lemma valid_Add:
 
 lemma valid_Set:
   assumes "B \<equiv> postcondition_trivial (Set x i) A"
-  assumes "p \<equiv> [Set x i]"
+  defines "p \<equiv> [Set x i]"
   shows "hoare A p B"
   apply (rule hoareI)
   unfolding assms
@@ -118,7 +118,7 @@ lemma valid_Set:
 
 lemma valid_Guess_trivial:
   assumes "B \<equiv> postcondition_trivial (Guess x) A"
-  assumes "p == [Guess x]"
+  defines "p == [Guess x]"
   shows "hoare A p B"
   apply (rule hoareI)
   unfolding assms
@@ -127,7 +127,7 @@ lemma valid_Guess_trivial:
 
 lemma valid_Guess_pick:
   assumes "B \<equiv> postcondition_pick (Guess x) i A"
-  assumes "p == [Guess x]"
+  defines "p == [Guess x]"
   shows "hoare A p B"
   apply (rule hoareI)
   unfolding assms

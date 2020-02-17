@@ -6,6 +6,7 @@ val binding: binding
 val read_program: Proof.context -> string -> program
 val read_range: Proof.context -> string -> range
 val read_invariant: Proof.context -> string -> term
+val join_hoare: Proof.context -> program -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
 val valid_range: program -> range -> bool
 (* Contract: valid range *)
 val extract_range: program -> range -> term
@@ -36,8 +37,11 @@ type logic = {
   read_range: Proof.context -> string -> ex_range,
   read_invariant: Proof.context -> string -> term,
   valid_range: ex_program -> ex_range -> bool,
-  extract_range: ex_program -> ex_range -> term,
-  hoare_thm: Proof.context -> term -> term -> term -> term
+  extract_range: ex_program -> ex_range -> term, (* TODO do we need that? *)
+  hoare_thm: Proof.context -> term -> term -> term -> term,
+  (* join_hoare ctxt prog a r1 b r2 c h1 h2
+     returns thm {a}r1;r2{c} *)
+  join_hoare: Proof.context -> ex_program -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm)
 }
 
 structure Logic_Data = Theory_Data(
@@ -159,23 +163,23 @@ val _ =
 fun prove binding after_qed prop state = 
   Proof.have true NONE after_qed [] [] [((binding,[]),[(prop,[])])] true state |> \<^print> |> snd
 
-fun hoare_thm ctxt (hoare:hoare) : cterm = let
+(* fun hoare_thm ctxt (hoare:hoare) : cterm = let
   val logic = hoare |> #program |> get_program ctxt |> the |> #logic |> get_logic' ctxt |> the
   val pre = #precondition hoare |> get_invariant ctxt |> the |> #const
   val post = #postcondition hoare |> get_invariant ctxt |> the |> #const
   val prog = #program_fragment_const hoare
   val prop = #hoare_thm logic ctxt pre prog post
-  in Thm.cterm_of ctxt prop end
+  in Thm.cterm_of ctxt prop end *)
 
-fun update_hoare_valid new_valid ({binding, range, program_fragment_const, precondition,
+(* fun update_hoare_valid new_valid ({binding, range, program_fragment_const, precondition,
   postcondition, program, valid=_}:hoare) : hoare =
    {binding=binding, range=range, 
     program_fragment_const=program_fragment_const, precondition=precondition,
     postcondition=postcondition,
     program=program,
-    valid=new_valid}
+    valid=new_valid} *)
 
-fun add_hoare2 binding after_qed0 (program:program) range (precondition:invariant) (postcondition:invariant) state : hoare * Proof.state = let
+(* fun add_hoare2 binding after_qed0 (program:program) range (precondition:invariant) (postcondition:invariant) state : hoare * Proof.state = let
   fun bind suffix = Binding.suffix_name suffix binding
   val logic = get_logic (Proof.theory_of state) (#logic program) |> the
   val program_fragment = (#extract_range logic) (#code program) range
@@ -195,17 +199,19 @@ fun add_hoare2 binding after_qed0 (program:program) range (precondition:invarian
     | _ => raise Match
   val valid_prop = hoare_thm (Proof.context_of state) info |> Thm.term_of
   val state = prove (Binding.suffix_name "_valid" binding) after_qed valid_prop state
-  in (info,state) end
+  in (info,state) end *)
 
-fun new_hoare binding after_qed0 (program:string option) range (precondition:string) (postcondition:term) state = let
+fun new_hoare binding after_qed0 (program:string) range (precondition:string) (postcondition:string) state = let
   val ctxt = Proof.context_of state
-  val program = case program of 
+(*   val program = case program of 
     SOME program => program
-  | NONE => get_current_program ctxt |> the
+  | NONE => get_current_program ctxt |> the *)
   val program = get_program ctxt program |> the
   val precondition = case get_invariant ctxt precondition of
     SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
-  val (postcondition,state) = Proof.map_context_result (add_invariant binding postcondition) state
+  val postcondition = case get_invariant ctxt postcondition of
+    SOME inv => inv | NONE => error ("Undefined postcondition " ^ postcondition)
+  (* val (postcondition,state) = Proof.map_context_result (add_invariant binding postcondition) state *)
   (* val (_,state) = add_hoare2 binding after_qed0 program range precondition postcondition state *)
   fun bind suffix = Binding.suffix_name suffix binding
   val logic = get_logic (Proof.theory_of state) (#logic program) |> the
@@ -214,17 +220,18 @@ fun new_hoare binding after_qed0 (program:string option) range (precondition:str
   val (program_fragment_const,state) = 
       def'' (bind "_prog") program_fragment state
   (* Not valid yet: the theorem is invalid *)
-  val info : hoare = {binding=binding, range=range,
-    precondition=Binding.name_of (#binding precondition),
-    postcondition=Binding.name_of (#binding postcondition),
-    program_fragment_const=program_fragment_const,
-    program=program |> #binding |> Binding.name_of,
-    valid= @{thm reflexive}
-  }
-  val valid_prop = hoare_thm (Proof.context_of state) info |> Thm.term_of
+  val valid_prop = #hoare_thm logic ctxt (#const precondition) program_fragment (#const postcondition)
+  (* val valid_prop = hoare_thm (Proof.context_of state) info |> Thm.term_of *)
   (* val (info,state) = Proof.map_context_result (add_hoare_invalid binding program range precondition postcondition) state *)
-  fun after_qed (_,validss) = case validss of [[valid]] =>
-      after_qed0 (Proof.map_context (add_hoare0 (update_hoare_valid valid info)), valid)
+  fun after_qed (_,validss) state = case validss of [[valid]] => let
+      val info : hoare = {binding=binding, range=range,
+        precondition=Binding.name_of (#binding precondition),
+        postcondition=Binding.name_of (#binding postcondition),
+        program_fragment_const=program_fragment_const,
+        program=program |> #binding |> Binding.name_of,
+        valid=valid}
+      val state = Proof.map_context (add_hoare0 info) state
+      in after_qed0 (state, info) end
     | _ => raise Match
   val state = prove (Binding.suffix_name "_valid" binding) after_qed valid_prop state
 
@@ -301,6 +308,8 @@ fun range_ex (Ex_Range (Range prog)) = prog
 
 fun valid_range prog range = Logic.valid_range (program_ex prog) (range_ex range)
 fun extract_range prog range = Logic.extract_range (program_ex prog) (range_ex range)
+fun join_hoare ctxt prog a r1 b r2 c h1 h2 = Logic.join_hoare ctxt (program_ex prog) a (range_ex r1) b (range_ex r2) c h1 h2
+  |> apfst ex_range
 
 val logic : logic = {
   serial = serial(),
@@ -310,7 +319,8 @@ val logic : logic = {
   extract_range = extract_range,
   valid_range = valid_range,
   hoare_thm = Logic.hoare_thm,
-  read_invariant = Logic.read_invariant
+  read_invariant = Logic.read_invariant,
+  join_hoare = join_hoare
 }
 
 val _ = Context.>> (Context.map_theory (Logic_Data.map (Symtab.update_new (Binding.name_of Logic.binding, logic))))

@@ -38,6 +38,13 @@ structure Demo_Hoare_Logic = Hoare_Logic(
     program |> drop start |> take (endd-start) |> program_to_term
 
   fun read_invariant ctxt str = Syntax.read_term ctxt ("(" ^ str ^ ") :: Demo_Hoare.mem \<Rightarrow> HOL.bool")
+
+  fun join_hoare ctxt prog a (l1,l2) b (l3,l4) c h1 h2 = let
+    val _ = if l2 <> l3 then error "mismatch" else ()
+    val t = @{thm hoare_seq'} OF [h1,h2]
+    val r = (l1,l4)
+(* TODO: correct thm *)
+    in (r,t) end
 )
 
 val ex_range = Demo_Hoare_Logic.ex_range
