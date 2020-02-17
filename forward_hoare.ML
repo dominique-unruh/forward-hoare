@@ -219,10 +219,7 @@ fun new_hoare binding after_qed0 (program:string) range (precondition:string) (p
   val _ = tracing ("Program fragment: " ^ Syntax.string_of_term (Proof.context_of state) program_fragment)
   val (program_fragment_const,state) = 
       def'' (bind "_prog") program_fragment state
-  (* Not valid yet: the theorem is invalid *)
   val valid_prop = #hoare_thm logic ctxt (#const precondition) program_fragment (#const postcondition)
-  (* val valid_prop = hoare_thm (Proof.context_of state) info |> Thm.term_of *)
-  (* val (info,state) = Proof.map_context_result (add_hoare_invalid binding program range precondition postcondition) state *)
   fun after_qed (_,validss) state = case validss of [[valid]] => let
       val info : hoare = {binding=binding, range=range,
         precondition=Binding.name_of (#binding precondition),
@@ -235,6 +232,50 @@ fun new_hoare binding after_qed0 (program:string) range (precondition:string) (p
     | _ => raise Match
   val state = prove (Binding.suffix_name "_valid" binding) after_qed valid_prop state
 
+in state end
+
+fun join_hoare binding (hoare1:string) (hoare2:string) state = let
+  val ctxt = Proof.context_of state
+  val hoare1' = get_hoare ctxt hoare1 |> the
+  val hoare2' = get_hoare ctxt hoare2 |> the
+  val program = #program hoare1'
+  val _ = if #program hoare1' <> #program hoare2' then error "mismatch" else ()
+  val _ = if #postcondition hoare1' <> #precondition hoare2' then error "mismatch" else ()
+  val program' = program |> get_program ctxt |> the
+  val logic = program' |> #logic |> get_logic' ctxt |> the
+  val a = hoare1' |> #precondition |> get_invariant ctxt |> the |> #const
+  val b = hoare1' |> #postcondition |> get_invariant ctxt |> the |> #const
+  val c = hoare2' |> #postcondition |> get_invariant ctxt |> the |> #const
+  val (range,joined_thm) = #join_hoare logic ctxt (#code program') a (#range hoare1') b (#range hoare2') c
+          (#valid hoare1') (#valid hoare2')
+  val program_fragment = (#extract_range logic) (#code program') range
+  val (program_fragment_const,state) = 
+      def'' (Binding.suffix_name "_prog" binding) program_fragment state
+
+  val state = Proof.map_context (snd o Local_Theory.note ((Binding.suffix_name "_valid" binding, []), [joined_thm])) state
+
+  val info : hoare = {binding=binding, range=range,
+    precondition= #precondition hoare1',
+    postcondition= #postcondition hoare2',
+    program_fragment_const=program_fragment_const,
+    program=program,
+    valid=joined_thm
+  }
+  
+  val state = Proof.map_context (add_hoare0 info) state
+
+  in (state,info) end
+
+fun extend_hoare binding (previous:string) after_qed0 range (postcondition:string) state = let
+  val ctxt = Proof.context_of state
+  val binding_step = Binding.suffix_name "_step" binding
+  val previous_hoare = get_hoare ctxt previous |> the
+  val program = #program previous_hoare
+  val precondition = #postcondition previous_hoare
+  fun after_qed (state, hoare) = let
+    val (state, joined_hoare) = join_hoare binding previous (Binding.name_of binding_step) state
+    in after_qed0 (state, hoare, joined_hoare) end
+  val state = new_hoare binding_step after_qed program range precondition postcondition state
 in state end
 
 fun define_program_command logic binding content (ctxt:Proof.context) : Proof.context = let
