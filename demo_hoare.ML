@@ -39,12 +39,22 @@ structure Demo_Hoare_Logic = Hoare_Logic(
 
   fun read_invariant ctxt str = Syntax.read_term ctxt ("(" ^ str ^ ") :: Demo_Hoare.mem \<Rightarrow> HOL.bool")
 
-  fun join_hoare ctxt prog a (l1,l2) b (l3,l4) c h1 h2 = let
+  val join_hoare_goal = 
+    \<^const>\<open>hoare\<close> $ Var(("pre",0), \<^typ>\<open>invariant\<close>) $ Var(("prog",0), \<^typ>\<open>program\<close>) $ Var(("post",0), \<^typ>\<open>invariant\<close>)
+    |> HOLogic.mk_Trueprop |> Thm.cterm_of \<^context> |> Goal.init
+    |> SINGLE (resolve_tac \<^context> @{thms hoare_seq'} 1) |> the
+    |> \<^print>
+
+  fun join_hoare ctxt _ _ (l1,l2) _ (l3,l4) _ h1 h2 = let
     val _ = if l2 <> l3 then error "mismatch" else ()
-    val t = @{thm hoare_seq'} OF [h1,h2]
+    val thm = join_hoare_goal 
+              |> SINGLE (solve_tac ctxt [h1] 1
+                    THEN solve_tac ctxt [h2] 1
+                    THEN REPEAT (resolve_tac ctxt @{thms append_aux1} 1)
+                    THEN solve_tac ctxt @{thms append_aux2} 1) |> the
+              |> Goal.finish ctxt
     val r = (l1,l4)
-(* TODO: correct thm *)
-    in (r,t) end
+    in (r,thm) end
 )
 
 val ex_range = Demo_Hoare_Logic.ex_range

@@ -4,7 +4,6 @@ begin
 
 ML_file "test.ML"
 
-
 lemma True
 proof 
 
@@ -36,8 +35,6 @@ proof
   invariant (demo_logic) step2: \<open>postcondition_pick (Guess STR ''y'') (-5) step1_inv\<close>
   do_prf \<open>extend_hoare \<^binding>\<open>step2\<close> "step1" #1 (Demo_Hoare.ex_range (1,2)) "step2"\<close>
     using step2_inv_def by (rule valid)
-
-  print_theorems
 
   have step2_x5: "pc_imp step2_inv (\<lambda>m. m STR ''x'' = 5)"
     using step2_inv_def apply (rule unchanged)
@@ -79,8 +76,6 @@ proof
   have "hoare (\<lambda>_. True) prog (\<lambda>m. m STR ''x'' = 0)"
     unfolding prog_def
     apply (rule hoare_conseq')
-(* TODO fix Demo_Hoare so that the following two simps can be removed. *)
-    apply simp apply simp
     unfolding start_inv_def apply (simp add: pc_imp_def)
      apply (rule step3_x0)
     by simp

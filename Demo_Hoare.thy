@@ -226,6 +226,15 @@ lemma wp_Set:
 
 lemmas wp = wp_Add wp_Set
 
+lemma append_aux1:
+  assumes "xs = ys @ zs"
+  shows "x#xs = (x#ys) @ zs"
+  using assms by auto
+
+lemma append_aux2:
+  shows "xs = [] @ xs"
+  by auto
+
 
 
 ML_file "demo_hoare.ML"

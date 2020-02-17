@@ -161,7 +161,7 @@ val _ =
     (Parse.ML_source >> (Toplevel.proof o do_prf_cmd));
 
 fun prove binding after_qed prop state = 
-  Proof.have true NONE after_qed [] [] [((binding,[]),[(prop,[])])] true state |> \<^print> |> snd
+  Proof.have true NONE after_qed [] [] [((binding,[]),[(prop,[])])] true state |> snd
 
 (* fun hoare_thm ctxt (hoare:hoare) : cterm = let
   val logic = hoare |> #program |> get_program ctxt |> the |> #logic |> get_logic' ctxt |> the
