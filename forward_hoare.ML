@@ -4,7 +4,8 @@ type program
 type range
 val binding: binding
 val read_program: Proof.context -> string -> program
-val read_range: Proof.context -> string -> range
+val read_range: range option -> range context_parser
+val pretty_range: Proof.context -> range -> Pretty.T
 val read_invariant: Proof.context -> string -> term
 val join_hoare: Proof.context -> program -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
 val valid_range: program -> range -> bool
@@ -34,7 +35,8 @@ type logic = {
   binding: binding,
   serial: serial,
   read_program: Proof.context -> string -> ex_program,
-  read_range: Proof.context -> string -> ex_range,
+  read_range: ex_range option -> ex_range context_parser,
+  pretty_range: Proof.context -> ex_range -> Pretty.T,
   read_invariant: Proof.context -> string -> term,
   valid_range: ex_program -> ex_range -> bool,
   extract_range: ex_program -> ex_range -> term, (* TODO do we need that? *)
@@ -58,9 +60,9 @@ fun get_logic' ctxt = get_logic (Proof_Context.theory_of ctxt)
 
 fun def' binding t lthy =
   let val thm_binding = Binding.suffix_name "_def" binding
-      val ((const,_),lthy) = Local_Theory.define ((binding,NoSyn),((thm_binding,[]),t)) lthy
+      val ((const,(_,thm)),lthy) = Local_Theory.define ((binding,NoSyn),((thm_binding,[]),t)) lthy
       val _ = tracing ("Defining " ^ string_of_binding_const binding ^ " := " ^ Syntax.string_of_term lthy t)
-  in (const,lthy) end
+  in ((const,thm),lthy) end
 (* fun def binding t lthy = def' binding t lthy |> snd *)
 fun def'' binding t = Proof.map_context_result (def' binding t)
 
@@ -70,7 +72,8 @@ type program = { binding: binding, code: ex_program, logic: string }
 type invariant = {
   binding: binding,
   term: term,
-  const: term
+  const: term,
+  def_thm: thm
 }
 
 type hoare = {
@@ -115,8 +118,8 @@ fun get_current_program ctxt = Hoare_Data.get ctxt |> #current_program
 
 fun add_invariant binding (invariant:term) ctxt : invariant * Proof.context = let
   fun bind suffix = Binding.suffix_name suffix binding
-  val (invariant_const,ctxt) = def' (bind "_inv") invariant ctxt
-  val info : invariant = {binding=binding, const=invariant_const, term=invariant}
+  val ((invariant_const,thm),ctxt) = def' (bind "_inv") invariant ctxt
+  val info : invariant = {binding=binding, const=invariant_const, term=invariant, def_thm=thm}
   val ctxt = add_invariant0 info ctxt
   in (info,ctxt) end
 
@@ -215,9 +218,12 @@ fun new_hoare binding after_qed0 (program:string) range (precondition:string) (p
   (* val (_,state) = add_hoare2 binding after_qed0 program range precondition postcondition state *)
   fun bind suffix = Binding.suffix_name suffix binding
   val logic = get_logic (Proof.theory_of state) (#logic program) |> the
+  val _ = if #valid_range logic (#code program) range then ()
+          else error ("Invalid range " ^ Pretty.string_of (#pretty_range logic ctxt range))
   val program_fragment = (#extract_range logic) (#code program) range
+  val _ = tracing ("Range: " ^ (Pretty.string_of (#pretty_range logic ctxt range)))
   val _ = tracing ("Program fragment: " ^ Syntax.string_of_term (Proof.context_of state) program_fragment)
-  val (program_fragment_const,state) = 
+  val ((program_fragment_const,_),state) = 
       def'' (bind "_prog") program_fragment state
   val valid_prop = #hoare_thm logic ctxt (#const precondition) program_fragment (#const postcondition)
   fun after_qed (_,validss) state = case validss of [[valid]] => let
@@ -234,6 +240,24 @@ fun new_hoare binding after_qed0 (program:string) range (precondition:string) (p
 
 in state end
 
+fun new_hoare_auto binding after_qed0 (program:string) range (precondition:string) 
+    (postcondition:binding) (make_post:Proof.context->term->term->term*(Proof.context->tactic)) state = let
+  val ctxt = Proof.context_of state
+  val program' = get_program ctxt program |> the
+  val logic = get_logic (Proof.theory_of state) (#logic program') |> the
+  val program_fragment = (#extract_range logic) (#code program') range
+  val precondition' = case get_invariant ctxt precondition of
+    SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
+  val (post,tac) = make_post ctxt program_fragment (#const precondition')
+  val (post,state) = Proof.map_context_result (add_invariant postcondition post) state
+  val state = new_hoare binding after_qed0 program range precondition (Binding.name_of postcondition) state
+  val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
+    |> Seq.first_result "could not unfold definition of postcondition (internal error)"
+  val (state,_) = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (tac ctxt)), Position.no_range) state
+    |> Seq.first_result "could not solve proof obligation"
+
+  in state end
+
 fun join_hoare binding (hoare1:string) (hoare2:string) state = let
   val ctxt = Proof.context_of state
   val hoare1' = get_hoare ctxt hoare1 |> the
@@ -249,7 +273,7 @@ fun join_hoare binding (hoare1:string) (hoare2:string) state = let
   val (range,joined_thm) = #join_hoare logic ctxt (#code program') a (#range hoare1') b (#range hoare2') c
           (#valid hoare1') (#valid hoare2')
   val program_fragment = (#extract_range logic) (#code program') range
-  val (program_fragment_const,state) = 
+  val ((program_fragment_const,_),state) = 
       def'' (Binding.suffix_name "_prog" binding) program_fragment state
 
   val state = Proof.map_context (snd o Local_Theory.note ((Binding.suffix_name "_valid" binding, []), [joined_thm])) state
@@ -311,6 +335,40 @@ in
     (parser >> (fn ((logic,name),content) => Toplevel.proof (Proof.map_context (define_invariant_command logic name content))))
 end
 
+
+fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
+
+fun parse_src ctxt (parser:'a context_parser) (src:Token.src) : 'a = let
+  val eof = Parse.group (K "end of range description") Parse.eof |> Scan.lift
+  val (result,_) = Scan.catch (parser --| eof) (Context.Proof ctxt, src @ [Token.eof])
+  (* val _ = if null rest then () else error "rest" *)
+  in result end
+
+fun hoare_command (name:binding) (range:Token.src) (pre:string) (post:string)
+       (state:Proof.state) : Proof.state = let
+  val ctxt = Proof.context_of state
+  val thy = Proof.theory_of state
+  val program = get_current_program ctxt |> the
+  val program' = get_program ctxt program |> the
+  val logic = get_logic thy (#logic program') |> the
+  val range' = parse_src ctxt (#read_range logic NONE) range
+  val state = new_hoare name fst program range' pre post state
+  in state end
+
+val _ = let
+  val name_parser = Parse.binding --| Parse.$$$ ":"
+  (* TODO: parse program name *)
+  val range_parser = Args.$$$ "range" |-- tokens_parser
+    (Token.keyword_with (fn x => x="pre" orelse x="post"))
+  val pre_parser = Args.$$$ "pre" |-- Parse.name
+  val post_parser = Args.$$$ "post" |-- Parse.name
+  val parser = name_parser -- range_parser -- pre_parser -- post_parser
+in
+  Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "State a Hoare triple"
+    (parser >> (fn (((name,range),pre),post) => 
+      Toplevel.proof ((hoare_command name range pre post))))
+end
+
 end
 
 signature HOARE_LOGIC =
@@ -342,10 +400,14 @@ fun ex_program prog = Ex_Program (Program prog)
 fun program_ex (Ex_Program (Program prog)) = prog
   | program_ex (Ex_Program e) = err ("program_ex: " ^ \<^make_string> e)
 
-fun read_range ctxt str = Ex_Range (Range (Logic.read_range ctxt str))
-fun ex_range prog = Ex_Range (Range prog)
+fun ex_range range = Ex_Range (Range range)
 fun range_ex (Ex_Range (Range prog)) = prog
   | range_ex (Ex_Range e) = err ("range_ex: " ^ \<^make_string> e)
+
+fun read_range relative = 
+  Logic.read_range (Option.map range_ex relative) >> ex_range
+
+fun pretty_range ctxt range = Logic.pretty_range ctxt (range_ex range)
 
 fun valid_range prog range = Logic.valid_range (program_ex prog) (range_ex range)
 fun extract_range prog range = Logic.extract_range (program_ex prog) (range_ex range)
@@ -357,6 +419,7 @@ val logic : logic = {
   binding = Logic.binding,
   read_program = read_program,
   read_range = read_range,
+  pretty_range = pretty_range,
   extract_range = extract_range,
   valid_range = valid_range,
   hoare_thm = Logic.hoare_thm,

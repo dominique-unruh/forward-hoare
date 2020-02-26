@@ -18,7 +18,7 @@ fun semantics :: "program \<Rightarrow> mem \<Rightarrow> mem set" where
 
 type_synonym "invariant" = "mem \<Rightarrow> bool"
 
-definition hoare :: "invariant \<Rightarrow> program \<Rightarrow> invariant \<Rightarrow> bool" where
+definition "hoare" :: "invariant \<Rightarrow> program \<Rightarrow> invariant \<Rightarrow> bool" where
   "hoare A p B \<longleftrightarrow> (\<forall>m. A m \<longrightarrow> (\<exists>m'\<in>semantics p m. B m'))"
 
 

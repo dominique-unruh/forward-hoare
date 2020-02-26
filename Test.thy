@@ -16,11 +16,13 @@ proof
 
   (* Step 1: Set x 5 *)
 
-  invariant (demo_logic) step1: \<open>(postcondition_trivial (Set STR ''x'' 5) start_inv)\<close>
+  (* invariant (demo_logic) step1: \<open>(postcondition_trivial (Set STR ''x'' 5) start_inv)\<close> *)
 
-  do_prf \<open>Forward_Hoare.new_hoare \<^binding>\<open>step1\<close> fst (Forward_Hoare.get_current_program \<^context> |> the)
-          (Demo_Hoare.ex_range (0,1)) "start" "step1"\<close>
-    using step1_inv_def by (rule valid)
+(* TODO: step1 should be defined by this *)
+  (* hoare step1: range 0-1 pre start post step1 *)
+  do_prf \<open>Forward_Hoare.new_hoare_auto \<^binding>\<open>step1\<close> fst (Forward_Hoare.get_current_program \<^context> |> the)
+            (Demo_Hoare.ex_range (0,1)) "start" \<^binding>\<open>step1\<close> postcondition_trivial\<close>
+    by -
 
   have step1_x5: "pc_imp step1_inv (\<lambda>m. m STR ''x'' = 5)"
     using step1_inv_def by (rule newvalue)

@@ -27,9 +27,13 @@ structure Demo_Hoare_Logic = Hoare_Logic(
     val p = term_to_program t
   in p end
     
-  fun read_range ctxt str = error "read_range"
+  (* TODO support relative ranges *)
+  fun read_range _ : range context_parser = 
+    Scan.lift (Parse.nat --| Parse.minus -- Parse.nat)
 
-  fun hoare_thm ctxt pre prog post = \<^const>\<open>hoare\<close> $ pre $ prog $ post |> HOLogic.mk_Trueprop
+  fun pretty_range _ (start,stop) = Pretty.strs [string_of_int start,"-",string_of_int stop]
+
+  fun hoare_thm _ pre prog post = \<^const>\<open>hoare\<close> $ pre $ prog $ post |> HOLogic.mk_Trueprop
 
   fun valid_range (program:program) ((start,endd):range) =
     start <= endd andalso start >= 0 andalso endd <= length program
@@ -61,6 +65,7 @@ val ex_range = Demo_Hoare_Logic.ex_range
 val range_ex = Demo_Hoare_Logic.range_ex
 val ex_program = Demo_Hoare_Logic.ex_program
 val program_ex = Demo_Hoare_Logic.program_ex
+val logic = Demo_Hoare_Logic.logic
 
 fun use_facts_tac ctxt thms = 
   EVERY' (map (fn thm => forward_tac ctxt [thm COMP @{thm pc_impD}]) (rev (tl thms)))
