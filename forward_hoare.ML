@@ -7,6 +7,7 @@ val read_program: Proof.context -> string -> program
 val read_range: range option -> range context_parser
 val pretty_range: Proof.context -> range -> Pretty.T
 val read_invariant: Proof.context -> string -> term
+val postcondition_generators: (Proof.context->term->term->term*(Proof.context->tactic)) Symtab.table
 val join_hoare: Proof.context -> program -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
 val valid_range: program -> range -> bool
 (* Contract: valid range *)
@@ -43,7 +44,8 @@ type logic = {
   hoare_thm: Proof.context -> term -> term -> term -> term,
   (* join_hoare ctxt prog a r1 b r2 c h1 h2
      returns thm {a}r1;r2{c} *)
-  join_hoare: Proof.context -> ex_program -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm)
+  join_hoare: Proof.context -> ex_program -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
+  postcondition_generators: (Proof.context->term->term->term*(Proof.context->tactic)) Symtab.table
 }
 
 structure Logic_Data = Theory_Data(
@@ -241,13 +243,14 @@ fun new_hoare binding after_qed0 (program:string) range (precondition:string) (p
 in state end
 
 fun new_hoare_auto binding after_qed0 (program:string) range (precondition:string) 
-    (postcondition:binding) (make_post:Proof.context->term->term->term*(Proof.context->tactic)) state = let
+    (postcondition:binding) (make_post:string) state = let
   val ctxt = Proof.context_of state
   val program' = get_program ctxt program |> the
   val logic = get_logic (Proof.theory_of state) (#logic program') |> the
   val program_fragment = (#extract_range logic) (#code program') range
   val precondition' = case get_invariant ctxt precondition of
     SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
+  val make_post = Symtab.lookup (#postcondition_generators logic) make_post |> the
   val (post,tac) = make_post ctxt program_fragment (#const precondition')
   val (post,state) = Proof.map_context_result (add_invariant postcondition post) state
   val state = new_hoare binding after_qed0 program range precondition (Binding.name_of postcondition) state
@@ -424,7 +427,8 @@ val logic : logic = {
   valid_range = valid_range,
   hoare_thm = Logic.hoare_thm,
   read_invariant = Logic.read_invariant,
-  join_hoare = join_hoare
+  join_hoare = join_hoare,
+  postcondition_generators = Logic.postcondition_generators
 }
 
 val _ = Context.>> (Context.map_theory (Logic_Data.map (Symtab.update_new (Binding.name_of Logic.binding, logic))))

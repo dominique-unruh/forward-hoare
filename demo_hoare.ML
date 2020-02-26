@@ -43,6 +43,19 @@ structure Demo_Hoare_Logic = Hoare_Logic(
 
   fun read_invariant ctxt str = Syntax.read_term ctxt ("(" ^ str ^ ") :: Demo_Hoare.mem \<Rightarrow> HOL.bool")
 
+  fun postcondition_trivial _ program_fragment pre = let
+    val instruction = case HOLogic.dest_list program_fragment of
+      [i] => i | _ => error "Program must be one instruction long"
+    val post = \<^const>\<open>postcondition_trivial\<close> $ instruction $ pre
+    fun tac ctxt = resolve_tac ctxt @{thms valid[OF reflexive]} 1
+    in
+      (post, tac)
+    end
+  
+  val postcondition_generators = Symtab.make [
+    ("trivial", postcondition_trivial)
+  ]
+
   val join_hoare_goal = 
     \<^const>\<open>hoare\<close> $ Var(("pre",0), \<^typ>\<open>invariant\<close>) $ Var(("prog",0), \<^typ>\<open>program\<close>) $ Var(("post",0), \<^typ>\<open>invariant\<close>)
     |> HOLogic.mk_Trueprop |> Thm.cterm_of \<^context> |> Goal.init

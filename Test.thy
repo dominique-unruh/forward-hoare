@@ -21,7 +21,7 @@ proof
 (* TODO: step1 should be defined by this *)
   (* hoare step1: range 0-1 pre start post step1 *)
   do_prf \<open>Forward_Hoare.new_hoare_auto \<^binding>\<open>step1\<close> fst (Forward_Hoare.get_current_program \<^context> |> the)
-            (Demo_Hoare.ex_range (0,1)) "start" \<^binding>\<open>step1\<close> postcondition_trivial\<close>
+            (Demo_Hoare.ex_range (0,1)) "start" \<^binding>\<open>step1\<close> "trivial"\<close>
     by -
 
   have step1_x5: "pc_imp step1_inv (\<lambda>m. m STR ''x'' = 5)"
