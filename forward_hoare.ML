@@ -7,7 +7,7 @@ val read_program: Proof.context -> string -> program
 val read_range: range option -> range context_parser
 val pretty_range: Proof.context -> range -> Pretty.T
 val read_invariant: Proof.context -> string -> term
-val postcondition_generators: (Proof.context->term->term->term*(Proof.context->tactic)) Symtab.table
+val postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table
 val join_hoare: Proof.context -> program -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
 val valid_range: program -> range -> bool
 (* Contract: valid range *)
@@ -17,6 +17,9 @@ end
 
 structure Forward_Hoare =
 struct
+
+fun the' _ (SOME x) = x
+  | the' msg NONE = error (msg ())
 
 fun string_of_binding kind binding = let
   val name = Binding.name_of binding
@@ -45,7 +48,7 @@ type logic = {
   (* join_hoare ctxt prog a r1 b r2 c h1 h2
      returns thm {a}r1;r2{c} *)
   join_hoare: Proof.context -> ex_program -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
-  postcondition_generators: (Proof.context->term->term->term*(Proof.context->tactic)) Symtab.table
+  postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table
 }
 
 structure Logic_Data = Theory_Data(
@@ -58,7 +61,15 @@ structure Logic_Data = Theory_Data(
 
 
 fun get_logic thy name = Symtab.lookup (Logic_Data.get thy) name
+fun get_the_logic thy name = get_logic thy name |> the' (fn () => "Unknown hoare logic " ^ name)
 fun get_logic' ctxt = get_logic (Proof_Context.theory_of ctxt)
+
+fun logic_name {binding, ...} = Binding.name_of binding
+
+fun get_the_postcondition_generator logic make_post =
+ Symtab.lookup (#postcondition_generators logic) make_post 
+ |> the' (fn _ => "Unknown postcondition generator " ^ make_post ^ " in logic " ^ logic_name logic)
+
 
 fun def' binding t lthy =
   let val thm_binding = Binding.suffix_name "_def" binding
@@ -116,6 +127,7 @@ fun add_program0 p ctxt = let
 fun get_invariant ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #invariants) name
 fun get_hoare ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #hoares) name
 fun get_program ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #programs) name
+fun get_the_program ctxt name = get_program ctxt name |> the' (fn _ => "Unknown program " ^ name)
 fun get_current_program ctxt = Hoare_Data.get ctxt |> #current_program
 
 fun add_invariant binding (invariant:term) ctxt : invariant * Proof.context = let
@@ -211,7 +223,7 @@ fun new_hoare binding after_qed0 (program:string) range (precondition:string) (p
 (*   val program = case program of 
     SOME program => program
   | NONE => get_current_program ctxt |> the *)
-  val program = get_program ctxt program |> the
+  val program = get_the_program ctxt program
   val precondition = case get_invariant ctxt precondition of
     SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
   val postcondition = case get_invariant ctxt postcondition of
@@ -219,7 +231,7 @@ fun new_hoare binding after_qed0 (program:string) range (precondition:string) (p
   (* val (postcondition,state) = Proof.map_context_result (add_invariant binding postcondition) state *)
   (* val (_,state) = add_hoare2 binding after_qed0 program range precondition postcondition state *)
   fun bind suffix = Binding.suffix_name suffix binding
-  val logic = get_logic (Proof.theory_of state) (#logic program) |> the
+  val logic = get_the_logic (Proof.theory_of state) (#logic program)
   val _ = if #valid_range logic (#code program) range then ()
           else error ("Invalid range " ^ Pretty.string_of (#pretty_range logic ctxt range))
   val program_fragment = (#extract_range logic) (#code program) range
@@ -242,16 +254,24 @@ fun new_hoare binding after_qed0 (program:string) range (precondition:string) (p
 
 in state end
 
+
+fun parse_src expect ctxt (parser:'a context_parser) (src:Token.src) : 'a = let
+  val eof = Parse.group expect Parse.eof |> Scan.lift
+  val (result,_) = Scan.catch (parser --| eof) (Context.Proof ctxt, src @ [Token.eof])
+  (* val _ = if null rest then () else error "rest" *)
+  in result end
+
 fun new_hoare_auto binding after_qed0 (program:string) range (precondition:string) 
-    (postcondition:binding) (make_post:string) state = let
+    (postcondition:binding) (make_post:string) (make_post_args:Token.src) state = let
   val ctxt = Proof.context_of state
   val program' = get_program ctxt program |> the
   val logic = get_logic (Proof.theory_of state) (#logic program') |> the
   val program_fragment = (#extract_range logic) (#code program') range
   val precondition' = case get_invariant ctxt precondition of
     SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
-  val make_post = Symtab.lookup (#postcondition_generators logic) make_post |> the
-  val (post,tac) = make_post ctxt program_fragment (#const precondition')
+  val make_post' = get_the_postcondition_generator logic make_post
+  val make_post' = parse_src (fn _ =>  "end of arguments to " ^ make_post) ctxt make_post' make_post_args
+  val (post,tac) = make_post' program_fragment (#const precondition')
   val (post,state) = Proof.map_context_result (add_invariant postcondition post) state
   val state = new_hoare binding after_qed0 program range precondition (Binding.name_of postcondition) state
   val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
@@ -293,6 +313,7 @@ fun join_hoare binding (hoare1:string) (hoare2:string) state = let
 
   in (state,info) end
 
+(* Unused? *)
 fun extend_hoare binding (previous:string) after_qed0 range (postcondition:string) state = let
   val ctxt = Proof.context_of state
   val binding_step = Binding.suffix_name "_step" binding
@@ -303,6 +324,19 @@ fun extend_hoare binding (previous:string) after_qed0 range (postcondition:strin
     val (state, joined_hoare) = join_hoare binding previous (Binding.name_of binding_step) state
     in after_qed0 (state, hoare, joined_hoare) end
   val state = new_hoare binding_step after_qed program range precondition postcondition state
+in state end
+
+fun extend_hoare_auto binding (previous:string) after_qed0 range (postcondition:binding)
+    (make_post:string) (make_post_args:Token.src) state = let
+  val ctxt = Proof.context_of state
+  val binding_step = Binding.suffix_name "_step" binding
+  val previous_hoare = get_hoare ctxt previous |> the
+  val program = #program previous_hoare
+  val precondition = #postcondition previous_hoare
+  fun after_qed (state, hoare) = let
+    val (state, joined_hoare) = join_hoare binding previous (Binding.name_of binding_step) state
+    in after_qed0 (state, hoare, joined_hoare) end
+  val state = new_hoare_auto binding_step after_qed program range precondition postcondition make_post make_post_args state
 in state end
 
 fun define_program_command logic binding content (ctxt:Proof.context) : Proof.context = let
@@ -341,21 +375,15 @@ end
 
 fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
 
-fun parse_src ctxt (parser:'a context_parser) (src:Token.src) : 'a = let
-  val eof = Parse.group (K "end of range description") Parse.eof |> Scan.lift
-  val (result,_) = Scan.catch (parser --| eof) (Context.Proof ctxt, src @ [Token.eof])
-  (* val _ = if null rest then () else error "rest" *)
-  in result end
-
-fun hoare_command (name:binding) (range:Token.src) (pre:string) (post:string)
+fun hoare_command (name:binding) (range:Token.src) (pre:string) (post:binding) (make_post:string)
        (state:Proof.state) : Proof.state = let
   val ctxt = Proof.context_of state
   val thy = Proof.theory_of state
   val program = get_current_program ctxt |> the
   val program' = get_program ctxt program |> the
   val logic = get_logic thy (#logic program') |> the
-  val range' = parse_src ctxt (#read_range logic NONE) range
-  val state = new_hoare name fst program range' pre post state
+  val range' = parse_src (K "end of range description") ctxt (#read_range logic NONE) range
+  val state = new_hoare_auto name fst program range' pre post make_post [] (* TODO *) state
   in state end
 
 val _ = let
@@ -364,12 +392,12 @@ val _ = let
   val range_parser = Args.$$$ "range" |-- tokens_parser
     (Token.keyword_with (fn x => x="pre" orelse x="post"))
   val pre_parser = Args.$$$ "pre" |-- Parse.name
-  val post_parser = Args.$$$ "post" |-- Parse.name
+  val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- Parse.name
   val parser = name_parser -- range_parser -- pre_parser -- post_parser
 in
   Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "State a Hoare triple"
-    (parser >> (fn (((name,range),pre),post) => 
-      Toplevel.proof ((hoare_command name range pre post))))
+    (parser >> (fn (((name,range),pre),(post,make_post)) => 
+      Toplevel.proof ((hoare_command name range pre post make_post))))
 end
 
 end

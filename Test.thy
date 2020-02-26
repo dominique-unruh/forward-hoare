@@ -19,9 +19,9 @@ proof
   (* invariant (demo_logic) step1: \<open>(postcondition_trivial (Set STR ''x'' 5) start_inv)\<close> *)
 
 (* TODO: step1 should be defined by this *)
-  (* hoare step1: range 0-1 pre start post step1 *)
-  do_prf \<open>Forward_Hoare.new_hoare_auto \<^binding>\<open>step1\<close> fst (Forward_Hoare.get_current_program \<^context> |> the)
-            (Demo_Hoare.ex_range (0,1)) "start" \<^binding>\<open>step1\<close> "trivial"\<close>
+  hoare step1: range 0-1 pre start post step1=trivial
+(*   do_prf \<open>Forward_Hoare.new_hoare_auto \<^binding>\<open>step1\<close> fst (Forward_Hoare.get_current_program \<^context> |> the)
+            (Demo_Hoare.ex_range (0,1)) "start" \<^binding>\<open>step1\<close> "trivial"\<close> *)
     by -
 
   have step1_x5: "pc_imp step1_inv (\<lambda>m. m STR ''x'' = 5)"
@@ -29,9 +29,11 @@ proof
 
   (* Step 2: Guess y *)
 
-  invariant (demo_logic) step2: \<open>postcondition_pick (Guess STR ''y'') (-5) step1_inv\<close>
-  do_prf \<open>Forward_Hoare.extend_hoare \<^binding>\<open>step2\<close> "step1" #1 (Demo_Hoare.ex_range (1,2)) "step2"\<close>
-    using step2_inv_def by (rule valid)
+  (* invariant (demo_logic) step2: \<open>postcondition_pick (Guess STR ''y'') (-5) step1_inv\<close> *)
+  do_prf \<open>Forward_Hoare.extend_hoare_auto \<^binding>\<open>step2\<close> "step1" #1 (Demo_Hoare.ex_range (1,2)) \<^binding>\<open>step2\<close> "pick"
+    (Token.explode0 Keyword.empty_keywords "-5")
+\<close>
+    by -
 
   have step2_x5: "pc_imp step2_inv (\<lambda>m. m STR ''x'' = 5)"
     using step2_inv_def apply (rule unchanged)
@@ -44,9 +46,9 @@ proof
 
   (* Step 3: Add x y *)
 
-  invariant (demo_logic) step3: \<open>(postcondition_trivial (Add STR ''x'' STR ''y'') step2_inv)\<close>
-  do_prf \<open>Forward_Hoare.extend_hoare \<^binding>\<open>step3\<close> "step2" #1 (Demo_Hoare.ex_range (2,3)) "step3"\<close>
-    using step3_inv_def by (rule valid, simp)
+  (* invariant (demo_logic) step3: \<open>(postcondition_trivial (Add STR ''x'' STR ''y'') step2_inv)\<close> *)
+  do_prf \<open>Forward_Hoare.extend_hoare_auto \<^binding>\<open>step3\<close> "step2" #1 (Demo_Hoare.ex_range (2,3)) \<^binding>\<open>step3\<close> "trivial" []\<close>
+    by auto
 
   have step3_y5: "pc_imp step3_inv (\<lambda>m. m STR ''y'' = -5)"
     using step3_inv_def apply (rule unchanged)
