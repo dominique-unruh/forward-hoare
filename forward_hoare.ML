@@ -438,15 +438,18 @@ fun define_program_command (toolkit:'a toolkit) logic binding content (st:'a) : 
       {serial=serial(), binding=binding, logic=logic, code=program}) st
 in st end
 
-val _ = let
+local
   val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
   val name_parser = Parse.binding --| Parse.$$$ ":"
   val content_parser = Parse.embedded
   val parser = logic_parser -- name_parser -- content_parser
 in
-  Outer_Syntax.command \<^command_keyword>\<open>program\<close> "Declare a program"
+val _ = Outer_Syntax.command \<^command_keyword>\<open>program\<close> "Declare a program"
     (parser >> (fn ((logic,name),content) => Toplevel.proof
       (define_program_command proof_toolkit logic name content)))
+val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>program'\<close> "Declare a program"
+    (parser >> (fn ((logic,name),content) => 
+      (define_program_command lthy_toolkit logic name content)))
 end
 
 fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : 'a = let 
@@ -457,17 +460,19 @@ fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : '
   val (_,st) = add_invariant toolkit logic name term st
 in st end
 
-val _ = let
+local
   val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
   val name_parser = Parse.binding --| Parse.$$$ ":"
   val content_parser = Parse.group (fn _ => "invariant") (Parse.inner_syntax Parse.embedded)
   val parser = logic_parser -- name_parser -- content_parser
 in
-  Outer_Syntax.command \<^command_keyword>\<open>invariant\<close> "Declare an invariant"
+val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant\<close> "Declare an invariant"
     (parser >> (fn ((logic,name),content) => Toplevel.proof 
         (define_invariant_command proof_toolkit logic name content)))
+val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>invariant'\<close> "Declare an invariant"
+    (parser >> (fn ((logic,name),content) => 
+        (define_invariant_command lthy_toolkit logic name content)))
 end
-
 
 fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
 
@@ -475,7 +480,6 @@ fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (r
    (make_post:string) (make_post_args:Token.src) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
-  (* val thy = Proof.theory_of state *)
   val program = get_current_program context |> the
   val program' = get_program context program |> the
   val logic = get_logic (Context.theory_of context) (#logic program') |> the
@@ -487,7 +491,7 @@ fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (r
     | SOME previous => extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st
   in state end
 
-val _ = let
+local
   val name_parser = Parse.binding --| Parse.$$$ ":"
   (* TODO: parse program name *)
   val extends_parser = Args.$$$ "extends" |-- Parse.name |> Scan.option
@@ -498,9 +502,12 @@ val _ = let
   val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- make_post_parser
   val parser = name_parser -- extends_parser -- range_parser -- pre_parser -- post_parser
 in
-  Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "State a Hoare triple"
+val _ = Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "State a Hoare triple"
     (parser >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
       Toplevel.proof (hoare_command proof_toolkit name extends range pre post make_post make_post_args)))
+val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>hoare'\<close> "State a Hoare triple"
+    (parser >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
+      (hoare_command lthy_toolkit name extends range pre post make_post make_post_args)))
 end
 
 fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:string) (term:string) (st:'a) : Proof.state = let
@@ -515,13 +522,15 @@ fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:stri
   val state = #theorem toolkit after_qed goal st
 in state end
 
-val _ = let
+local
   val binding_parser = Parse.binding --| Args.$$$ ":"
   val invariant_parser = Parse.name --| (Args.$$$ "\<rightarrow>" || Args.$$$ "->")
   val parser = binding_parser -- invariant_parser -- Parse.term
 in
-  Outer_Syntax.command \<^command_keyword>\<open>invariant_has\<close> "Derive a fact about an invariant"
+val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant_has\<close> "Derive a fact about an invariant"
     (parser >> (fn ((binding,invariant),term) => Toplevel.proof (invariant_has_command proof_toolkit binding invariant term)))
+val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>invariant_has'\<close> "Derive a fact about an invariant"
+    (parser >> (fn ((binding,invariant),term) => (invariant_has_command lthy_toolkit binding invariant term)))
 end
 
 end

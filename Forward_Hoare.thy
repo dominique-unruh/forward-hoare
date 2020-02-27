@@ -3,9 +3,13 @@ theory Forward_Hoare
   keywords "do" :: prf_decl % "proof"
     and "do_prf" :: prf_goal % "proof"
     and "program" :: prf_decl % "proof"
+    and "program'" :: thy_decl
     and "invariant" :: prf_decl % "proof"
-    and "invariant_has" :: prf_decl % "proof"
-    and "hoare" :: prf_decl % "proof"
+    and "invariant'" :: thy_decl
+    and "invariant_has" :: prf_goal % "proof"
+    and "invariant_has'" :: thy_goal
+    and "hoare" :: prf_goal % "proof"
+    and "hoare'" :: thy_goal
     and "range" and "pre" and "post" and "extends"
 begin
 
