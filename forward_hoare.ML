@@ -375,29 +375,35 @@ end
 
 fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
 
-fun hoare_command (name:binding) (range:Token.src) (pre:string) (post:binding) (make_post:string)
-       (state:Proof.state) : Proof.state = let
+fun hoare_command (name:binding) (extends:string option) (range:Token.src) (pre:string option) (post:binding)
+   (make_post:string) (make_post_args:Token.src) (state:Proof.state) : Proof.state = let
   val ctxt = Proof.context_of state
   val thy = Proof.theory_of state
   val program = get_current_program ctxt |> the
   val program' = get_program ctxt program |> the
   val logic = get_logic thy (#logic program') |> the
   val range' = parse_src (K "end of range description") ctxt (#read_range logic NONE) range
-  val state = new_hoare_auto name fst program range' pre post make_post [] (* TODO *) state
+  val state = case extends of
+    NONE => (case pre of
+             NONE => error "Please specify precondition (pre) or previous Hoare judgment (extends)"
+             | SOME pre => new_hoare_auto name fst program range' pre post make_post make_post_args state)
+    | SOME previous => extend_hoare_auto name previous #1 range' post make_post make_post_args state
   in state end
 
 val _ = let
   val name_parser = Parse.binding --| Parse.$$$ ":"
   (* TODO: parse program name *)
+  val extends_parser = Args.$$$ "extends" |-- Parse.name |> Scan.option
   val range_parser = Args.$$$ "range" |-- tokens_parser
     (Token.keyword_with (fn x => x="pre" orelse x="post"))
-  val pre_parser = Args.$$$ "pre" |-- Parse.name
-  val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- Parse.name
-  val parser = name_parser -- range_parser -- pre_parser -- post_parser
+  val pre_parser = Args.$$$ "pre" |-- Parse.name |> Scan.option
+  val make_post_parser = Parse.name -- tokens_parser (K false)
+  val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- make_post_parser
+  val parser = name_parser -- extends_parser -- range_parser -- pre_parser -- post_parser
 in
   Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "State a Hoare triple"
-    (parser >> (fn (((name,range),pre),(post,make_post)) => 
-      Toplevel.proof ((hoare_command name range pre post make_post))))
+    (parser >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
+      Toplevel.proof ((hoare_command name extends range pre post make_post make_post_args))))
 end
 
 end

@@ -5,7 +5,7 @@ theory Forward_Hoare
     and "program" :: prf_decl % "proof"
     and "invariant" :: prf_decl % "proof"
     and "hoare" :: prf_decl % "proof"
-    and "range" and "pre" and "post"
+    and "range" and "pre" and "post" and "extends"
 begin
 
 ML_file "forward_hoare.ML"
