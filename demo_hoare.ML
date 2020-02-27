@@ -38,10 +38,19 @@ structure Demo_Hoare_Logic = Hoare_Logic(
   fun valid_range (program:program) ((start,endd):range) =
     start <= endd andalso start >= 0 andalso endd <= length program
 
+  fun invariant_implication _ (t1:term) (t2:term) = 
+    \<^const>\<open>pc_imp\<close> $ t1 $ t2 |> HOLogic.mk_Trueprop
+
   fun extract_range (program:program) ((start,endd):range) : term =
     program |> drop start |> take (endd-start) |> program_to_term
 
-  fun read_invariant ctxt str = Syntax.read_term ctxt ("(" ^ str ^ ") :: Demo_Hoare.mem \<Rightarrow> HOL.bool")
+  fun read_term_typed ctxt T str = let
+    val raw_term = Syntax.parse_term ctxt str
+    val typed = Const("_type_constraint_", T --> T) $ raw_term
+    val t = Syntax.check_term ctxt typed
+    in t end
+
+  fun read_invariant ctxt str = read_term_typed ctxt \<^typ>\<open>invariant\<close> str
 
   fun postcondition_trivial program_fragment pre = let
     val instruction = case HOLogic.dest_list program_fragment of

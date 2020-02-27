@@ -12,7 +12,8 @@ val join_hoare: Proof.context -> program -> term -> range -> term -> range -> te
 val valid_range: program -> range -> bool
 (* Contract: valid range *)
 val extract_range: program -> range -> term
-val hoare_thm : Proof.context -> term -> term -> term -> term (* pre prog post *)
+val hoare_thm: Proof.context -> term -> term -> term -> term (* pre prog post *)
+val invariant_implication: Proof.context -> term -> term -> term
 end
 
 structure Forward_Hoare =
@@ -48,7 +49,8 @@ type logic = {
   (* join_hoare ctxt prog a r1 b r2 c h1 h2
      returns thm {a}r1;r2{c} *)
   join_hoare: Proof.context -> ex_program -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
-  postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table
+  postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table,
+  invariant_implication: Proof.context -> term -> term -> term
 }
 
 structure Logic_Data = Theory_Data(
@@ -83,6 +85,7 @@ type var = string
 type program = { binding: binding, code: ex_program, logic: string }
 
 type invariant = {
+  logic: logic,
   binding: binding,
   term: term,
   const: term,
@@ -130,10 +133,10 @@ fun get_program ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #programs) nam
 fun get_the_program ctxt name = get_program ctxt name |> the' (fn _ => "Unknown program " ^ name)
 fun get_current_program ctxt = Hoare_Data.get ctxt |> #current_program
 
-fun add_invariant binding (invariant:term) ctxt : invariant * Proof.context = let
+fun add_invariant logic binding (invariant:term) ctxt : invariant * Proof.context = let
   fun bind suffix = Binding.suffix_name suffix binding
   val ((invariant_const,thm),ctxt) = def' (bind "_inv") invariant ctxt
-  val info : invariant = {binding=binding, const=invariant_const, term=invariant, def_thm=thm}
+  val info : invariant = {logic=logic, binding=binding, const=invariant_const, term=invariant, def_thm=thm}
   val ctxt = add_invariant0 info ctxt
   in (info,ctxt) end
 
@@ -272,7 +275,7 @@ fun new_hoare_auto binding after_qed0 (program:string) range (precondition:strin
   val make_post' = get_the_postcondition_generator logic make_post
   val make_post' = parse_src (fn _ =>  "end of arguments to " ^ make_post) ctxt make_post' make_post_args
   val (post,tac) = make_post' program_fragment (#const precondition')
-  val (post,state) = Proof.map_context_result (add_invariant postcondition post) state
+  val (post,state) = Proof.map_context_result (add_invariant logic postcondition post) state
   val state = new_hoare binding after_qed0 program range precondition (Binding.name_of postcondition) state
   val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
     |> Seq.first_result "could not unfold definition of postcondition (internal error)"
@@ -359,16 +362,16 @@ fun define_invariant_command logic name content ctxt = let
   val logic = get_logic' ctxt logic |> the
   val term = #read_invariant logic ctxt content
   val _ = tracing ("Declaring invariant "^ string_of_binding_invariant name ^ " in logic " ^ string_of_binding_logic (#binding logic))
-  val (_,ctxt) = add_invariant name term ctxt
+  val (_,ctxt) = add_invariant logic name term ctxt
 in ctxt end
 
 val _ = let
   val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
   val name_parser = Parse.binding --| Parse.$$$ ":"
-  val content_parser = Parse.embedded
+  val content_parser = Parse.group (fn _ => "invariant") (Parse.inner_syntax Parse.embedded)
   val parser = logic_parser -- name_parser -- content_parser
 in
-  Outer_Syntax.command \<^command_keyword>\<open>invariant\<close> "Declare a program"
+  Outer_Syntax.command \<^command_keyword>\<open>invariant\<close> "Declare an invariant"
     (parser >> (fn ((logic,name),content) => Toplevel.proof (Proof.map_context (define_invariant_command logic name content))))
 end
 
@@ -403,7 +406,26 @@ val _ = let
 in
   Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "State a Hoare triple"
     (parser >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
-      Toplevel.proof ((hoare_command name extends range pre post make_post make_post_args))))
+      Toplevel.proof (hoare_command name extends range pre post make_post make_post_args)))
+end
+
+fun invariant_has_command (binding:binding) (invariant:string) (term:string) state = let
+  val ctxt = Proof.context_of state
+  val invariant = get_invariant ctxt invariant |> the' (fn _ => "Unknown invariant " ^ invariant)
+  val logic = #logic invariant
+  val term = #read_invariant logic ctxt term
+  (* val _ = \<^print> (invariant,term) *)
+  val goal = #invariant_implication logic ctxt (#const invariant) term
+  val state = prove binding (K I) goal state
+in state end
+
+val _ = let
+  val binding_parser = Parse.binding --| Args.$$$ ":"
+  val invariant_parser = Parse.name --| (Args.$$$ "\<rightarrow>" || Args.$$$ "->")
+  val parser = binding_parser -- invariant_parser -- Parse.term
+in
+  Outer_Syntax.command \<^command_keyword>\<open>invariant_has\<close> "Derive a fact about an invariant"
+    (parser >> (fn ((binding,invariant),term) => Toplevel.proof (invariant_has_command binding invariant term)))
 end
 
 end
@@ -462,7 +484,8 @@ val logic : logic = {
   hoare_thm = Logic.hoare_thm,
   read_invariant = Logic.read_invariant,
   join_hoare = join_hoare,
-  postcondition_generators = Logic.postcondition_generators
+  postcondition_generators = Logic.postcondition_generators,
+  invariant_implication = Logic.invariant_implication
 }
 
 val _ = Context.>> (Context.map_theory (Logic_Data.map (Symtab.update_new (Binding.name_of Logic.binding, logic))))

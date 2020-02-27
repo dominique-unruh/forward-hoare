@@ -24,7 +24,7 @@ proof
             (Demo_Hoare.ex_range (0,1)) "start" \<^binding>\<open>step1\<close> "trivial"\<close> *)
     by -
 
-  have step1_x5: "pc_imp step1_inv (\<lambda>m. m STR ''x'' = 5)"
+  invariant_has step1_x5: step1 \<rightarrow> "\<lambda>m. m STR ''x'' = 5"
     using step1_inv_def by (rule newvalue)
 
   (* Step 2: Guess y *)
@@ -37,13 +37,13 @@ proof
  \<^binding>\<open>step2\<close> "pick" (Token.explode0 Keyword.empty_keywords "-5")\<close>
     by - *)
 
-  have step2_x5: "pc_imp step2_inv (\<lambda>m. m STR ''x'' = 5)"
+  invariant_has step2_x5: step2 \<rightarrow> "\<lambda>m. m STR ''x'' = 5"
     using step2_inv_def apply (rule unchanged)
      apply (rule independent_ofI, simp)
     apply (tactic \<open>Demo_Hoare.use_facts_tac \<^context> @{thms step1_x5} 1\<close>)
     by simp
 
-  have step2_y5: "pc_imp step2_inv (\<lambda>m. m STR ''y'' = -5)"
+  invariant_has step2_y5: step2 \<rightarrow> "\<lambda>m. m STR ''y'' = -5"
     using step2_inv_def by (rule newvalue)
 
   (* Step 3: Add x y *)
@@ -54,14 +54,14 @@ proof
     \<^binding>\<open>step3\<close> "trivial" []\<close> *)
     by auto
 
-  have step3_y5: "pc_imp step3_inv (\<lambda>m. m STR ''y'' = -5)"
+  invariant_has step3_y5: step3 \<rightarrow> "\<lambda>m. m STR ''y'' = -5"
     using step3_inv_def apply (rule unchanged)
       apply (rule independent_ofI, simp)
      apply simp
     apply (tactic \<open>Demo_Hoare.use_facts_tac \<^context> @{thms step2_y5} 1\<close>)
     by simp
 
-  have step3_x0: "pc_imp step3_inv (\<lambda>m. m STR ''x'' = 0)"
+  invariant_has step3_x0: step3 \<rightarrow> "\<lambda>m. m STR ''x'' = 0"
     using step3_inv_def apply (rule wp)
      apply simp
     apply (tactic \<open>Demo_Hoare.use_facts_tac \<^context> @{thms step2_x5 step2_y5} 1\<close>)

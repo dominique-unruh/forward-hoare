@@ -60,7 +60,7 @@ lemma hoare_seq':
   unfolding assms(3) using assms(1-2) by (rule hoare_seq) 
 
 
-definition "pc_imp pc1 pc2 \<longleftrightarrow> (\<forall>m. pc1 m \<longrightarrow> pc2 m)"
+definition "pc_imp pc1 pc2 \<longleftrightarrow> (\<forall>m. pc1 m \<longrightarrow> pc2 m)" for pc1 pc2 :: "invariant"
 
 lemma pc_impI[intro]: "(\<And>m. pc1 m \<Longrightarrow> pc2 m) \<Longrightarrow> pc_imp pc1 pc2"
   unfolding pc_imp_def by auto
