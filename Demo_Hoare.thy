@@ -145,21 +145,21 @@ lemma independent_ofI:
   shows "independent_of B x"
   unfolding independent_of_def using assms by metis
 
-lemma newvalue_Set:
+lemma newvalue_Set[hoare_updated add]:
   assumes "invariant \<equiv> postcondition_trivial (Set x i) A"
   shows "pc_imp invariant (\<lambda>m. m x = i)"
   unfolding assms
   by (rule pc_impI; simp)
 
-lemma newvalue_Guess: 
+lemma newvalue_Guess[hoare_updated add]: 
   assumes "invariant \<equiv> postcondition_pick (Guess x) i A"
   shows "pc_imp invariant (\<lambda>m. m x = i)"
   unfolding assms
   by (rule pc_impI; simp)
 
-lemmas newvalue = newvalue_Set newvalue_Guess
+(* lemmas newvalue = newvalue_Set newvalue_Guess *)
 
-lemma unchanged_Guess_trivial: 
+lemma unchanged_Guess_trivial[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Guess x) A"
   assumes indep: "independent_of B x"
   assumes imp: "\<And>m. A m \<Longrightarrow> B m"
@@ -169,7 +169,7 @@ lemma unchanged_Guess_trivial:
   using indep imp unfolding independent_of_def apply auto
   by (metis fun_upd_def)+
 
-lemma unchanged_Guess_pick: 
+lemma unchanged_Guess_pick[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_pick (Guess x) i A"
   assumes indep: "independent_of B x"
   assumes imp: "\<And>m. A m \<Longrightarrow> B m"
@@ -179,7 +179,7 @@ lemma unchanged_Guess_pick:
   using indep imp unfolding independent_of_def apply auto
   by (metis fun_upd_def)+
 
-lemma unchanged_Add: 
+lemma unchanged_Add[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Add x y) A"
   assumes indep: "independent_of B x"
   assumes xy: "x \<noteq> y"
@@ -190,7 +190,7 @@ lemma unchanged_Add:
   using indep imp xy unfolding independent_of_def apply auto
   by (metis fun_upd_def)
 
-lemma unchanged_Set: 
+lemma unchanged_Set[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Set x i) A"
   assumes indep: "independent_of B x"
   assumes imp: "\<And>m. A m \<Longrightarrow> B m"
@@ -200,9 +200,9 @@ lemma unchanged_Set:
   using indep imp unfolding independent_of_def apply auto
   by (metis fun_upd_def)
 
-lemmas unchanged = unchanged_Guess_pick unchanged_Guess_trivial unchanged_Add unchanged_Set
+(* lemmas unchanged = unchanged_Guess_pick unchanged_Guess_trivial unchanged_Add unchanged_Set *)
 
-lemma wp_Add: 
+lemma wp_Add[hoare_wp add]: 
   assumes "invariant \<equiv> postcondition_trivial (Add x y) A"
   assumes distinct: "x \<noteq> y"
   assumes imp: "\<And>m. A m \<Longrightarrow> B (m(x:=m x + m y))"
@@ -212,7 +212,7 @@ lemma wp_Add:
   using distinct apply simp apply (drule imp)
   by auto
 
-lemma wp_Set:
+lemma wp_Set[hoare_wp add]:
   assumes "invariant \<equiv> postcondition_trivial (Set x i) A"
   assumes imp: "\<And>m. A m \<Longrightarrow> B (m(x:=i))"
   shows "pc_imp invariant B"
@@ -224,7 +224,7 @@ lemma wp_Set:
   apply (drule imp)
   by auto
 
-lemmas wp = wp_Add wp_Set
+(* lemmas wp = wp_Add wp_Set *)
 
 lemma append_aux1:
   assumes "xs = ys @ zs"

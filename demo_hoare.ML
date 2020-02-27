@@ -105,5 +105,4 @@ fun use_facts_tac ctxt thms =
   EVERY' (map (fn thm => forward_tac ctxt [thm COMP @{thm pc_impD}]) (rev (tl thms)))
   THEN' (dresolve_tac ctxt [hd thms COMP @{thm pc_impD}])
 
-
 end

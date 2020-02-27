@@ -2,45 +2,20 @@ theory Test
   imports Demo_Hoare "HOL-Eisbach.Eisbach"
 begin
 
-named_theorems hoare_untouched
-named_theorems hoare_updated
-named_theorems hoare_wp
-
 ML_file "test.ML"
 
 ML \<open>
 open Forward_Hoare
 \<close>
 
-declare unchanged[hoare_untouched]
+(* declare unchanged[hoare_untouched]
 declare newvalue[hoare_updated]
-declare wp[hoare_wp]
+declare wp[hoare_wp] *)
 
 program' (demo_logic) prog: \<open>[Set STR ''x'' 5, Guess STR ''y'', Add STR ''x'' STR ''y'']\<close>
 
 (* TODO: should be handled by program-command *)
 definition prog where "prog = [Set STR ''x'' 5, Guess STR ''y'', Add STR ''x'' STR ''y'']"
-
-setup \<open>
-  Attrib.setup \<^binding>\<open>current_invariant_def\<close> 
-  (Scan.succeed (Thm.rule_attribute [] (fn context => fn thm =>
-    case Context.proof_of context |> get_current_invariant_def of
-      NONE => Drule.dummy_thm
-    | SOME thm => thm)))
-    "definition of the currently analyzed invariant (set by invariant_has)"
-\<close>
-
-method_setup untouched =
-  \<open>Scan.succeed (fn ctxt => SIMPLE_METHOD' (invariant_untouched_tac ctxt))\<close> 
-  "Invariant is preserved"
-
-method_setup updated =
-  \<open>Scan.succeed (fn ctxt => SIMPLE_METHOD' (invariant_updated_tac ctxt))\<close> 
-  "Variable is update"
-
-method_setup wp =
-  \<open>Scan.succeed (fn ctxt => SIMPLE_METHOD' (invariant_wp_tac ctxt))\<close> 
-  "Weakest precondition"
 
 lemma "hoare (\<lambda>m. True) prog (\<lambda>m. m STR ''x'' = 0)"
   (is "hoare ?pre _ ?post")

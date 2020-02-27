@@ -207,13 +207,14 @@ fun get_current_program ctxt = Hoare_Data.get ctxt |> #current_program
 
 
 structure Hoare_Proof_Data = Proof_Data (
-  type T = { current_invariant_def: thm option }
-  fun init _ = { current_invariant_def=NONE }
+  type T = { current_invariant: invariant option }
+  fun init _ = { current_invariant=NONE }
 )
 
-fun set_current_invariant_def thm = Hoare_Proof_Data.map (fn
-  { current_invariant_def=_ } => { current_invariant_def = SOME thm })
-fun get_current_invariant_def ctxt = Hoare_Proof_Data.get ctxt |> #current_invariant_def
+fun set_current_invariant invariant = Hoare_Proof_Data.map (fn
+  { current_invariant=_ } => { current_invariant = SOME invariant })
+fun get_current_invariant ctxt = Hoare_Proof_Data.get ctxt |> #current_invariant
+val get_current_invariant_def = get_current_invariant #> Option.map #def_thm
 val get_the_current_invariant_def = get_current_invariant_def
   #> the' (fn _ => "No current invariant")
 
@@ -532,7 +533,7 @@ fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:stri
   val goal = #invariant_implication logic ctxt (#const invariant) term
   fun after_qed thm = #note toolkit binding thm
   val state = #theorem toolkit after_qed goal st
-  val state = Proof.map_context (set_current_invariant_def (#def_thm invariant)) state
+  val state = Proof.map_context (set_current_invariant invariant) state
 in state end
 
 local
@@ -545,6 +546,27 @@ val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant_has\<close> "De
 val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>invariant_has'\<close> "Derive a fact about an invariant"
     (parser >> (fn ((binding,invariant),term) => (invariant_has_command lthy_toolkit binding invariant term)))
 end
+
+fun current_invariant_tac thms ctxt = let
+  val thms = thms ctxt
+  val inv_def = get_the_current_invariant_def ctxt
+  in
+    resolve_tac ctxt thms
+    THEN'
+    solve_tac ctxt [inv_def]
+  end
+
+val invariant_untouched_tac = current_invariant_tac (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_untouched\<close>)
+val invariant_updated_tac = current_invariant_tac (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>)
+val invariant_wp_tac = current_invariant_tac (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_wp\<close>)
+
+val _ = Theory.setup
+  (Attrib.setup \<^binding>\<open>current_invariant_def\<close> 
+  (Scan.succeed (Thm.rule_attribute [] (fn context => fn _ =>
+    case Context.proof_of context |> get_current_invariant_def of
+      NONE => Drule.dummy_thm
+    | SOME thm => thm)))
+    "[[current_invariant_def]] gives the definition of the currently investigated invariant)")
 
 end
 
