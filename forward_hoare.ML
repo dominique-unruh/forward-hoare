@@ -205,6 +205,18 @@ fun get_program ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #programs) nam
 fun get_the_program ctxt name = get_program ctxt name |> the' (fn _ => "Unknown program " ^ name)
 fun get_current_program ctxt = Hoare_Data.get ctxt |> #current_program
 
+
+structure Hoare_Proof_Data = Proof_Data (
+  type T = { current_invariant_def: thm option }
+  fun init _ = { current_invariant_def=NONE }
+)
+
+fun set_current_invariant_def thm = Hoare_Proof_Data.map (fn
+  { current_invariant_def=_ } => { current_invariant_def = SOME thm })
+fun get_current_invariant_def ctxt = Hoare_Proof_Data.get ctxt |> #current_invariant_def
+val get_the_current_invariant_def = get_current_invariant_def
+  #> the' (fn _ => "No current invariant")
+
 fun invariant_morph m ({serial,logic,binding,term,const,def_thm}:invariant) : invariant =
  {serial=serial, logic=logic, binding=binding, term=Morphism.term m term,
    const=Morphism.term m const, def_thm=Morphism.thm m def_thm}
@@ -520,6 +532,7 @@ fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:stri
   val goal = #invariant_implication logic ctxt (#const invariant) term
   fun after_qed thm = #note toolkit binding thm
   val state = #theorem toolkit after_qed goal st
+  val state = Proof.map_context (set_current_invariant_def (#def_thm invariant)) state
 in state end
 
 local
