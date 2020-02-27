@@ -5,7 +5,7 @@ begin
 ML_file "test.ML"
 
 lemma True
-proof 
+proof  -
 
   program (demo_logic) prog: \<open>[Set STR ''x'' 5, Guess STR ''y'', Add STR ''x'' STR ''y'']\<close>
 
@@ -75,6 +75,7 @@ proof
      apply (rule step3_x0)
     by simp
 
+  show ?thesis by simp
 qed
 
 end

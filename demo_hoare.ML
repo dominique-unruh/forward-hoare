@@ -70,6 +70,8 @@ structure Demo_Hoare_Logic = Hoare_Logic(
       (post, tac)
     end
   
+  fun program_morphism _ prog = prog
+
   val postcondition_generators = Symtab.make [
     ("trivial", Scan.succeed postcondition_trivial |> Scan.lift),
     ("pick", Scan.lift Parse.int >> postcondition_pick)
