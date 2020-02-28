@@ -140,7 +140,7 @@ lemmas valid = valid_Set valid_Guess_pick valid_Guess_trivial valid_Add
 
 
 definition "independent_of (B::invariant) (x::var) = (\<forall>m1 m2. (\<forall>y\<noteq>x. m1 y = m2 y) \<longrightarrow> B m1 = B m2)"
-lemma independent_ofI: 
+lemma independent_ofI[intro]: 
   assumes "\<And>m1 m2. (\<And>y. y\<noteq>x \<Longrightarrow> m1 y = m2 y) \<Longrightarrow> B m1 = B m2"
   shows "independent_of B x"
   unfolding independent_of_def using assms by metis

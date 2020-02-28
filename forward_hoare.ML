@@ -1,22 +1,3 @@
-signature HOARE_LOGIC_ARGS =
-sig
-type program
-type range
-val binding: binding
-val read_program: Proof.context -> string -> program
-val read_range: range option -> range context_parser
-val pretty_range: Proof.context -> range -> Pretty.T
-val read_invariant: Proof.context -> string -> term
-val postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table
-val join_hoare: Proof.context -> program -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
-val valid_range: program -> range -> bool
-(* Contract: valid range *)
-val extract_range: program -> range -> term
-val hoare_thm: Proof.context -> term -> term -> term -> term (* pre prog post *)
-val invariant_implication: Proof.context -> term -> term -> term
-val program_morphism: morphism -> program -> program
-end
-
 structure Forward_Hoare =
 struct
 
@@ -89,8 +70,6 @@ type logic = {
   valid_range: ex_program -> ex_range -> bool,
   extract_range: ex_program -> ex_range -> term, (* TODO do we need that? *)
   hoare_thm: Proof.context -> term -> term -> term -> term,
-  (* join_hoare ctxt prog a r1 b r2 c h1 h2
-     returns thm {a}r1;r2{c} *)
   join_hoare: Proof.context -> ex_program -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
   postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table,
   invariant_implication: Proof.context -> term -> term -> term,
@@ -115,15 +94,6 @@ fun logic_name {binding, ...} = Binding.name_of binding
 fun get_the_postcondition_generator logic make_post =
  Symtab.lookup (#postcondition_generators logic) make_post 
  |> the' (fn _ => "Unknown postcondition generator " ^ make_post ^ " in logic " ^ logic_name logic)
-
-(* TODO remove *)
-fun def' binding t lthy =
-  let val thm_binding = Binding.suffix_name "_def" binding
-      val ((const,(_,thm)),lthy) = Local_Theory.define ((binding,NoSyn),((thm_binding,[]),t)) lthy
-      val _ = tracing ("Defining " ^ string_of_binding_const binding ^ " := " ^ Syntax.string_of_term lthy t)
-  in ((const,thm),lthy) end
-(* TODO remove *)
-fun def'' binding t = Proof.map_context_result (def' binding t)
 
 type var = string
 type program = { serial: serial, binding: binding, code: ex_program, logic: string }
@@ -231,103 +201,14 @@ fun add_invariant (toolkit:'st toolkit) logic binding (invariant:term) st : inva
   val st = #declaration toolkit (fn m => add_invariant0 (invariant_morph m info)) st
   in (info,st) end
 
-(* fun add_hoare_invalid binding (program:program) range (precondition:invariant) (postcondition:invariant) (ctxt:Proof.context) = let
-  fun bind suffix = Binding.suffix_name suffix binding
-  val logic = get_logic (Proof_Context.theory_of ctxt) (#logic program) |> the
-  val program_fragment = (#extract_range logic) (#code program) range
-  (* val program_fragment_ct = program_to_term program_fragment *)
-  val _ = tracing ("Program fragment: " ^ Syntax.string_of_term ctxt program_fragment)
-  val (program_fragment_const,ctxt) = 
-      def' (bind "_prog") program_fragment ctxt
-  val info : hoare = {binding=binding, range=range,
-    precondition=Binding.name_of (#binding precondition),
-    postcondition=Binding.name_of (#binding postcondition),
-    program_fragment_const=program_fragment_const,
-    program=program |> #binding |> Binding.name_of,
-    valid= @{thm Pure.asm_rl}
-  }
-  in (info,ctxt) end *)
-
-(* TODO remove *)
-structure Do_Prf = Proof_Data(
-  type T = Proof.state -> Proof.state
-  fun init _ = fn _ => error "don't call this"
-)
-
-fun do_prf_cmd source state = let
-  val expr = ML_Context.expression (Input.pos_of source) 
-    (ML_Lex.read "Context.>> (Context.map_proof (Forward_Hoare.Do_Prf.put (" @ ML_Lex.read_source source @ ML_Lex.read ")))")
-  val f = Context.proof_map expr (Proof.context_of state) |> Do_Prf.get
-  val state = f state
-  in state end
-
-fun do_cmd source = let
-  val expr = ML_Context.expression (Input.pos_of source) (ML_Lex.read "Theory.local_setup (" @ ML_Lex.read_source source @ ML_Lex.read ")")  
-  in Context.proof_map expr |> Proof.map_context end
-
-val _ =
-  Outer_Syntax.command \<^command_keyword>\<open>do\<close> "do something to the context in a proof"
-    (Parse.ML_source >> (Toplevel.proof o do_cmd))
-val _ =
-  Outer_Syntax.command \<^command_keyword>\<open>do_prf\<close> "do something to the context in a proof"
-    (Parse.ML_source >> (Toplevel.proof o do_prf_cmd));
-
-(* TODO remove *)
-fun prove binding after_qed prop state = 
-  Proof.have true NONE after_qed [] [] [((binding,[]),[(prop,[])])] true state |> snd
-
-(* fun hoare_thm ctxt (hoare:hoare) : cterm = let
-  val logic = hoare |> #program |> get_program ctxt |> the |> #logic |> get_logic' ctxt |> the
-  val pre = #precondition hoare |> get_invariant ctxt |> the |> #const
-  val post = #postcondition hoare |> get_invariant ctxt |> the |> #const
-  val prog = #program_fragment_const hoare
-  val prop = #hoare_thm logic ctxt pre prog post
-  in Thm.cterm_of ctxt prop end *)
-
-(* fun update_hoare_valid new_valid ({binding, range, program_fragment_const, precondition,
-  postcondition, program, valid=_}:hoare) : hoare =
-   {binding=binding, range=range, 
-    program_fragment_const=program_fragment_const, precondition=precondition,
-    postcondition=postcondition,
-    program=program,
-    valid=new_valid} *)
-
-(* fun add_hoare2 binding after_qed0 (program:program) range (precondition:invariant) (postcondition:invariant) state : hoare * Proof.state = let
-  fun bind suffix = Binding.suffix_name suffix binding
-  val logic = get_logic (Proof.theory_of state) (#logic program) |> the
-  val program_fragment = (#extract_range logic) (#code program) range
-  val _ = tracing ("Program fragment: " ^ Syntax.string_of_term (Proof.context_of state) program_fragment)
-  val (program_fragment_const,state) = 
-      def'' (bind "_prog") program_fragment state
-  val info : hoare = {binding=binding, range=range,
-    precondition=Binding.name_of (#binding precondition),
-    postcondition=Binding.name_of (#binding postcondition),
-    program_fragment_const=program_fragment_const,
-    program=program |> #binding |> Binding.name_of,
-    valid= @{thm Pure.asm_rl} (* Arbitrary theorem here *)
-  }
-  (* val (info,state) = Proof.map_context_result (add_hoare_invalid binding program range precondition postcondition) state *)
-  fun after_qed (_,validss) = case validss of [[valid]] =>
-        after_qed0 (Proof.map_context (add_hoare0 (update_hoare_valid valid info)), valid)
-    | _ => raise Match
-  val valid_prop = hoare_thm (Proof.context_of state) info |> Thm.term_of
-  val state = prove (Binding.suffix_name "_valid" binding) after_qed valid_prop state
-  in (info,state) end *)
-
 fun new_hoare (toolkit:'a toolkit) binding after_qed0 (program:string) range (precondition:string) (postcondition:string) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
-  (* val (ctxt,thy) = let  in (Context.proof_of context, Context.theory_of context) end *)
-(*   val program = case program of 
-    SOME program => program
-  | NONE => get_current_program ctxt |> the *)
   val program = get_the_program context program
   val precondition = case get_invariant context precondition of
     SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
   val postcondition = case get_invariant context postcondition of
     SOME inv => inv | NONE => error ("Undefined postcondition " ^ postcondition)
-  (* val (postcondition,state) = Proof.map_context_result (add_invariant binding postcondition) state *)
-  (* val (_,state) = add_hoare2 binding after_qed0 program range precondition postcondition state *)
   fun bind suffix = Binding.suffix_name suffix binding
   val logic = get_the_logic (Context.theory_of context) (#logic program)
   val _ = if #valid_range logic (#code program) range then ()
@@ -356,7 +237,6 @@ in state end
 fun parse_src expect ctxt (parser:'a context_parser) (src:Token.src) : 'a = let
   val eof = Parse.group expect Parse.eof |> Scan.lift
   val (result,_) = Scan.catch (parser --| eof) (Context.Proof ctxt, src @ [Token.eof])
-  (* val _ = if null rest then () else error "rest" *)
   in result end
 
 fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (program:string) range (precondition:string) 
@@ -372,7 +252,6 @@ fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (program:string) rang
   val make_post' = parse_src (fn _ =>  "end of arguments to " ^ make_post) ctxt make_post' make_post_args
   val (post,tac) = make_post' program_fragment (#const precondition')
   val (post,st) = add_invariant toolkit (#logic program') postcondition post st
-(* Proof.map_context_result (add_invariant logic postcondition post) state *)
   val state = new_hoare toolkit binding after_qed0 program range precondition (Binding.name_of postcondition) st
   val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
     |> Seq.first_result "could not unfold definition of postcondition (internal error)"
@@ -430,7 +309,6 @@ in state end *)
 fun extend_hoare_auto (toolkit:'a toolkit) binding (previous:string) after_qed0 range (postcondition:binding)
     (make_post:string) (make_post_args:Token.src) (st:'a) = let
   val context = #context toolkit st
-  (* val ctxt = Context.proof_of context *)
   val binding_step = Binding.suffix_name "_step" binding
   val previous_hoare = get_hoare context previous |> the
   val program = #program previous_hoare
@@ -451,20 +329,6 @@ fun define_program_command (toolkit:'a toolkit) logic binding content (st:'a) : 
       {serial=serial(), binding=binding, logic=logic, code=program}) st
 in st end
 
-local
-  val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
-  val name_parser = Parse.binding --| Parse.$$$ ":"
-  val content_parser = Parse.embedded
-  val parser = logic_parser -- name_parser -- content_parser
-in
-val _ = Outer_Syntax.command \<^command_keyword>\<open>program\<close> "Declare a program"
-    (parser >> (fn ((logic,name),content) => Toplevel.proof
-      (define_program_command proof_toolkit logic name content)))
-val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>program'\<close> "Declare a program"
-    (parser >> (fn ((logic,name),content) => 
-      (define_program_command lthy_toolkit logic name content)))
-end
-
 fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : 'a = let 
   val context = #context toolkit st
   val logic' = get_logic (Context.theory_of context) logic |> the
@@ -472,20 +336,6 @@ fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : '
   val _ = tracing ("Declaring invariant "^ string_of_binding_invariant name ^ " in logic " ^ string_of_binding_logic (#binding logic'))
   val (_,st) = add_invariant toolkit logic name term st
 in st end
-
-local
-  val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
-  val name_parser = Parse.binding --| Parse.$$$ ":"
-  val content_parser = Parse.group (fn _ => "invariant") (Parse.inner_syntax Parse.embedded)
-  val parser = logic_parser -- name_parser -- content_parser
-in
-val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant\<close> "Declare an invariant"
-    (parser >> (fn ((logic,name),content) => Toplevel.proof 
-        (define_invariant_command proof_toolkit logic name content)))
-val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>invariant'\<close> "Declare an invariant"
-    (parser >> (fn ((logic,name),content) => 
-        (define_invariant_command lthy_toolkit logic name content)))
-end
 
 fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
 
@@ -529,23 +379,11 @@ fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:stri
   val invariant = get_invariant context invariant |> the' (fn _ => "Unknown invariant " ^ invariant)
   val logic = get_logic (Context.theory_of context) (#logic invariant) |> the
   val term = #read_invariant logic ctxt term
-  (* val _ = \<^print> (invariant,term) *)
   val goal = #invariant_implication logic ctxt (#const invariant) term
   fun after_qed thm = #note toolkit binding thm
   val state = #theorem toolkit after_qed goal st
   val state = Proof.map_context (set_current_invariant invariant) state
 in state end
-
-local
-  val binding_parser = Parse.binding --| Args.$$$ ":"
-  val invariant_parser = Parse.name --| (Args.$$$ "\<rightarrow>" || Args.$$$ "->")
-  val parser = binding_parser -- invariant_parser -- Parse.term
-in
-val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant_has\<close> "Derive a fact about an invariant"
-    (parser >> (fn ((binding,invariant),term) => Toplevel.proof (invariant_has_command proof_toolkit binding invariant term)))
-val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>invariant_has'\<close> "Derive a fact about an invariant"
-    (parser >> (fn ((binding,invariant),term) => (invariant_has_command lthy_toolkit binding invariant term)))
-end
 
 fun current_invariant_tac thms ctxt = let
   val thms = thms ctxt
@@ -568,68 +406,49 @@ val _ = Theory.setup
     | SOME thm => thm)))
     "[[current_invariant_def]] gives the definition of the currently investigated invariant)")
 
+
+(** Isar command **)
+
+
+local
+  val binding_parser = Parse.binding --| Args.$$$ ":"
+  val invariant_parser = Parse.name --| (Args.$$$ "\<rightarrow>" || Args.$$$ "->")
+  val parser = binding_parser -- invariant_parser -- Parse.term
+in
+val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant_has\<close> "Derive a fact about an invariant"
+    (parser >> (fn ((binding,invariant),term) => Toplevel.proof (invariant_has_command proof_toolkit binding invariant term)))
+val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>invariant_has'\<close> "Derive a fact about an invariant"
+    (parser >> (fn ((binding,invariant),term) => (invariant_has_command lthy_toolkit binding invariant term)))
 end
 
-signature HOARE_LOGIC =
-sig
-type program
-type range
-val logic: Forward_Hoare.logic
-val ex_program : program -> Forward_Hoare.ex_program
-val program_ex : Forward_Hoare.ex_program -> program
-val ex_range : range -> Forward_Hoare.ex_range
-val range_ex : Forward_Hoare.ex_range -> range
+
+local
+  val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
+  val name_parser = Parse.binding --| Parse.$$$ ":"
+  val content_parser = Parse.embedded
+  val parser = logic_parser -- name_parser -- content_parser
+in
+val _ = Outer_Syntax.command \<^command_keyword>\<open>program\<close> "Declare a program"
+    (parser >> (fn ((logic,name),content) => Toplevel.proof
+      (define_program_command proof_toolkit logic name content)))
+val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>program'\<close> "Declare a program"
+    (parser >> (fn ((logic,name),content) => 
+      (define_program_command lthy_toolkit logic name content)))
 end
 
 
-functor Hoare_Logic(Logic: HOARE_LOGIC_ARGS): HOARE_LOGIC =
-struct
+local
+  val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
+  val name_parser = Parse.binding --| Parse.$$$ ":"
+  val content_parser = Parse.group (fn _ => "invariant") (Parse.inner_syntax Parse.embedded)
+  val parser = logic_parser -- name_parser -- content_parser
+in
+val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant\<close> "Declare an invariant"
+    (parser >> (fn ((logic,name),content) => Toplevel.proof 
+        (define_invariant_command proof_toolkit logic name content)))
+val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>invariant'\<close> "Declare an invariant"
+    (parser >> (fn ((logic,name),content) => 
+        (define_invariant_command lthy_toolkit logic name content)))
+end
 
-open Forward_Hoare
-
-type program = Logic.program
-type range = Logic.range
-exception Program of program
-exception Range of range
-
-fun err str = error (Binding.name_of Logic.binding ^ "." ^ str)
-
-fun read_program ctxt str = Ex_Program (Program (Logic.read_program ctxt str))
-fun ex_program prog = Ex_Program (Program prog)
-fun program_ex (Ex_Program (Program prog)) = prog
-  | program_ex (Ex_Program e) = err ("program_ex: " ^ \<^make_string> e)
-
-fun ex_range range = Ex_Range (Range range)
-fun range_ex (Ex_Range (Range prog)) = prog
-  | range_ex (Ex_Range e) = err ("range_ex: " ^ \<^make_string> e)
-
-fun read_range relative = 
-  Logic.read_range (Option.map range_ex relative) >> ex_range
-
-fun pretty_range ctxt range = Logic.pretty_range ctxt (range_ex range)
-
-fun valid_range prog range = Logic.valid_range (program_ex prog) (range_ex range)
-fun extract_range prog range = Logic.extract_range (program_ex prog) (range_ex range)
-fun join_hoare ctxt prog a r1 b r2 c h1 h2 = Logic.join_hoare ctxt (program_ex prog) a (range_ex r1) b (range_ex r2) c h1 h2
-  |> apfst ex_range
-
-fun program_morphism m prog = ex_program (Logic.program_morphism m (program_ex prog))
-
-val logic : logic = {
-  serial = serial(),
-  binding = Logic.binding,
-  read_program = read_program,
-  read_range = read_range,
-  pretty_range = pretty_range,
-  extract_range = extract_range,
-  valid_range = valid_range,
-  hoare_thm = Logic.hoare_thm,
-  read_invariant = Logic.read_invariant,
-  join_hoare = join_hoare,
-  postcondition_generators = Logic.postcondition_generators,
-  invariant_implication = Logic.invariant_implication,
-  program_morphism = program_morphism
-}
-
-val _ = Context.>> (Context.map_theory (Logic_Data.map (Symtab.update_new (Binding.name_of Logic.binding, logic))))
 end

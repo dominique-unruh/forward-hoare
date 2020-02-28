@@ -1,8 +1,6 @@
 theory Forward_Hoare
   imports Pure
-  keywords "do" :: prf_decl % "proof"
-    and "do_prf" :: prf_goal % "proof"
-    and "program" :: prf_decl % "proof"
+  keywords "program" :: prf_decl % "proof"
     and "program'" :: thy_decl
     and "invariant" :: prf_decl % "proof"
     and "invariant'" :: thy_decl
@@ -19,6 +17,7 @@ named_theorems hoare_updated
 named_theorems hoare_wp
 
 ML_file "forward_hoare.ML"
+ML_file "hoare_logic.ML"
 
 
 method_setup untouched =
