@@ -6,7 +6,8 @@ type 'a toolkit = {
   declaration: declaration -> 'a -> 'a,
   context: 'a -> Context.generic,
   theorem: (thm -> 'a -> 'a) -> term -> 'a -> Proof.state,
-  note: binding -> thm -> 'a -> 'a
+  note: binding -> thm -> 'a -> 'a,
+  qed: Proof.state -> 'a
 }
 
 val lthy_toolkit : local_theory toolkit = let
@@ -21,7 +22,8 @@ val lthy_toolkit : local_theory toolkit = let
       | after_qed' _ _ = raise Match
     in Proof.theorem NONE after_qed' [[(prop, [])]] lthy end
   fun note bind thm lthy = Local_Theory.note ((bind,[]),[thm]) lthy |> snd
-  in { define=define, declaration=declaration, context=context, theorem=theorem, note=note } end
+  fun qed state = error "nyi 1"
+  in { define=define, declaration=declaration, context=context, theorem=theorem, note=note, qed=qed } end
 
 val proof_toolkit : Proof.state toolkit = let
 
@@ -41,7 +43,9 @@ val proof_toolkit : Proof.state toolkit = let
   fun note bind thm state = 
     Proof.map_context_result (Proof_Context.note_thmss "" [((bind,[]),[([thm],[])])]) state |> snd
 
-  in { define=define, declaration=declaration, context=context, theorem=theorem, note=note } end
+  val qed = Proof.local_done_proof
+
+  in { define=define, declaration=declaration, context=context, theorem=theorem, note=note, qed=qed } end
 
 fun the' _ (SOME x) = x
   | the' msg NONE = error (msg ())
@@ -354,25 +358,6 @@ fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (r
     | SOME previous => extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st
   in state end
 
-local
-  val name_parser = Parse.binding --| Parse.$$$ ":"
-  (* TODO: parse program name *)
-  val extends_parser = Args.$$$ "extends" |-- Parse.name |> Scan.option
-  val range_parser = Args.$$$ "range" |-- tokens_parser
-    (Token.keyword_with (fn x => x="pre" orelse x="post"))
-  val pre_parser = Args.$$$ "pre" |-- Parse.name |> Scan.option
-  val make_post_parser = Parse.name -- tokens_parser (K false)
-  val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- make_post_parser
-  val parser = name_parser -- extends_parser -- range_parser -- pre_parser -- post_parser
-in
-val _ = Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "State a Hoare triple"
-    (parser >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
-      Toplevel.proof (hoare_command proof_toolkit name extends range pre post make_post make_post_args)))
-val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>hoare'\<close> "State a Hoare triple"
-    (parser >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
-      (hoare_command lthy_toolkit name extends range pre post make_post make_post_args)))
-end
-
 fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:string) (term:string) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
@@ -409,46 +394,79 @@ val _ = Theory.setup
 
 (** Isar command **)
 
-
-local
   val binding_parser = Parse.binding --| Args.$$$ ":"
   val invariant_parser = Parse.name --| (Args.$$$ "\<rightarrow>" || Args.$$$ "->")
-  val parser = binding_parser -- invariant_parser -- Parse.term
-in
-val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant_has\<close> "Derive a fact about an invariant"
-    (parser >> (fn ((binding,invariant),term) => Toplevel.proof (invariant_has_command proof_toolkit binding invariant term)))
-val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>invariant_has'\<close> "Derive a fact about an invariant"
-    (parser >> (fn ((binding,invariant),term) => (invariant_has_command lthy_toolkit binding invariant term)))
-end
+  fun invariant_has_parser toolkit = binding_parser -- invariant_parser -- Parse.term
+ >> (fn ((binding,invariant),term) => invariant_has_command toolkit binding invariant term)
 
-
-local
   val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
   val name_parser = Parse.binding --| Parse.$$$ ":"
   val content_parser = Parse.embedded
-  val parser = logic_parser -- name_parser -- content_parser
-in
-val _ = Outer_Syntax.command \<^command_keyword>\<open>program\<close> "Declare a program"
-    (parser >> (fn ((logic,name),content) => Toplevel.proof
-      (define_program_command proof_toolkit logic name content)))
-val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>program'\<close> "Declare a program"
-    (parser >> (fn ((logic,name),content) => 
-      (define_program_command lthy_toolkit logic name content)))
-end
+  fun declare_program_parser toolkit = (logic_parser -- name_parser -- content_parser)
+    >> (fn ((logic,name),content) => define_program_command toolkit logic name content)
 
-
-local
   val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
   val name_parser = Parse.binding --| Parse.$$$ ":"
   val content_parser = Parse.group (fn _ => "invariant") (Parse.inner_syntax Parse.embedded)
-  val parser = logic_parser -- name_parser -- content_parser
+  val declare_invariant_parser = logic_parser -- name_parser -- content_parser
+
+local
 in
 val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant\<close> "Declare an invariant"
-    (parser >> (fn ((logic,name),content) => Toplevel.proof 
+    (declare_invariant_parser >> (fn ((logic,name),content) => Toplevel.proof 
         (define_invariant_command proof_toolkit logic name content)))
 val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>invariant'\<close> "Declare an invariant"
-    (parser >> (fn ((logic,name),content) => 
+    (declare_invariant_parser >> (fn ((logic,name),content) => 
         (define_invariant_command lthy_toolkit logic name content)))
 end
+
+  val name_parser = Parse.binding --| Parse.$$$ ":"
+  (* TODO: parse program name *)
+  val extends_parser = Args.$$$ "extends" |-- Parse.name |> Scan.option
+  val range_parser = Args.$$$ "range" |-- tokens_parser
+    (Token.keyword_with (fn x => x="pre" orelse x="post"))
+  val pre_parser = Args.$$$ "pre" |-- Parse.name |> Scan.option
+  val make_post_parser = Parse.name -- tokens_parser (K false)
+  val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- make_post_parser
+  fun hoare_triple_parser toolkit = name_parser -- extends_parser -- range_parser -- pre_parser -- post_parser
+    >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
+          (hoare_command toolkit name extends range pre post make_post make_post_args))
+
+
+fun no_proof_obligation (toolkit:'a toolkit) (command:'a->Proof.state) st = let
+  val state = command st
+  val finished = state |> Proof.goal |> #goal |> Thm.no_prems
+  val _ = if not finished then error "Proof obligations remain. Use hoare'-command instead of hoare-command" else ()
+  val st = #qed toolkit state
+in st end
+
+fun dummy_proof_obligation (toolkit:'a toolkit) (command:'a->'a) st = let
+  val _ = warning "This command never produces proof obligations. Use hoare-command instead of hoare'-command"
+  val st = command st
+  val state = #theorem toolkit (K I) \<^prop>\<open>PROP x \<equiv> PROP x\<close> st
+in state end
+
+
+
+(* TODO: add cuts and groups as needed *)
+fun command_parser_no_proof toolkit = 
+  (Args.$$$ "program" |-- declare_program_parser toolkit) ||
+  (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit >> no_proof_obligation toolkit) ||
+  (hoare_triple_parser toolkit >> no_proof_obligation toolkit)
+
+fun command_parser_proof toolkit = 
+  (Args.$$$ "program" |-- declare_program_parser toolkit >> dummy_proof_obligation toolkit) ||
+  (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit) ||
+  (hoare_triple_parser toolkit)
+
+val _ = Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "Run a Hoare logic command (without proof obligation)"
+  (command_parser_no_proof proof_toolkit >> Toplevel.proof)
+val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>Hoare\<close> "Run a Hoare logic command (without proof obligation)"
+  (command_parser_no_proof lthy_toolkit)
+val _ = Outer_Syntax.command \<^command_keyword>\<open>hoare'\<close> "Run a Hoare logic command (with proof obligation)"
+  (command_parser_proof proof_toolkit >> Toplevel.proof)
+val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>Hoare'\<close> "Run a Hoare logic command (with proof obligation)"
+  (command_parser_proof lthy_toolkit)
+
 
 end
