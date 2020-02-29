@@ -333,6 +333,7 @@ fun define_program_command (toolkit:'a toolkit) (logic:string) binding content (
   val logic' = get_logic thy logic |> the
   val program = read_term_typed ctxt (#program_term_typ logic') content
   val _ = #check_program logic' ctxt program
+  val (_,_,st) = #define toolkit binding (Binding.suffix_name "_def" binding) program st
   val st = #declaration toolkit (add_program0decl
       {serial=serial(), binding=binding, logic=logic, code=program}) st
 in st end

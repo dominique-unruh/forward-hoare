@@ -10,9 +10,6 @@ open Forward_Hoare
 
 program' (demo_logic) prog: \<open>[Set STR ''x'' 5, Guess STR ''y'', Add STR ''x'' STR ''y'']\<close>
 
-(* TODO: should be handled by program-command *)
-definition prog where "prog = [Set STR ''x'' 5, Guess STR ''y'', Add STR ''x'' STR ''y'']"
-
 lemma "hoare (\<lambda>m. True) prog (\<lambda>m. m STR ''x'' = 0)"
   (is "hoare ?pre _ ?post")
 proof  -
