@@ -67,7 +67,9 @@ type logic = {
   check_program: Proof.context -> term -> unit,
   read_range: ex_range option -> ex_range context_parser,
   pretty_range: Proof.context -> ex_range -> Pretty.T,
-  read_invariant: Proof.context -> string -> term,
+  invariant_typ: typ,
+  check_invariant: Proof.context -> term -> unit,
+  (* read_invariant: Proof.context -> string -> term, *)
   valid_range: term -> ex_range -> bool,
   extract_range: term -> ex_range -> term, (* TODO do we need that? *)
   hoare_thm: Proof.context -> term -> term -> term -> term,
@@ -340,8 +342,10 @@ in st end
 
 fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : 'a = let 
   val context = #context toolkit st
+  val ctxt = Context.proof_of context
   val logic' = get_logic (Context.theory_of context) logic |> the
-  val term = #read_invariant logic' (Context.proof_of context) content
+  val term = read_term_typed ctxt (#invariant_typ logic') content
+  val _ = #check_invariant logic' ctxt term
   val _ = tracing ("Declaring invariant "^ string_of_binding_invariant name ^ " in logic " ^ string_of_binding_logic (#binding logic'))
   val (_,st) = add_invariant toolkit logic name term st
 in st end
@@ -387,7 +391,8 @@ fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:stri
   val ctxt = Context.proof_of context
   val invariant = get_invariant context invariant |> the' (fn _ => "Unknown invariant " ^ invariant)
   val logic = get_logic (Context.theory_of context) (#logic invariant) |> the
-  val term = #read_invariant logic ctxt term
+  val term = read_term_typed ctxt (#invariant_typ logic) term
+  val _ = #check_invariant logic ctxt term
   val goal = #invariant_implication logic ctxt (#const invariant) term
   fun after_qed thm = #note toolkit binding thm
   val state = #theorem toolkit after_qed goal st

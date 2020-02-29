@@ -4,11 +4,15 @@ sig
 type range
 val binding: binding
 val program_term_typ: typ
+val invariant_typ: typ
+(* Can assume that term is of type program_term_typ *)
 val check_program: Proof.context -> term -> unit
+(* Can assume that term is of type invariant_typ *)
+val check_invariant: Proof.context -> term -> unit
 (* val read_program: Proof.context -> string -> program *)
 val read_range: range option -> range context_parser
 val pretty_range: Proof.context -> range -> Pretty.T
-val read_invariant: Proof.context -> string -> term
+(* val read_invariant: Proof.context -> string -> term *)
 val postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table
 (* join_hoare ctxt program invariant1 range12 invariant2 range23 invariant3 thm12 thm23 *)
 val join_hoare: Proof.context -> term -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
@@ -71,14 +75,16 @@ val logic : logic = {
   serial = serial(),
   binding = Logic.binding,
   program_term_typ = Logic.program_term_typ,
+  invariant_typ = Logic.invariant_typ,
   check_program = Logic.check_program,
+  check_invariant = Logic.check_invariant,
   (* read_program = read_program, *)
   read_range = read_range,
   pretty_range = pretty_range,
   extract_range = extract_range,
   valid_range = valid_range,
   hoare_thm = Logic.hoare_thm,
-  read_invariant = Logic.read_invariant,
+  (* read_invariant = Logic.read_invariant, *)
   join_hoare = join_hoare,
   postcondition_generators = Logic.postcondition_generators,
   invariant_implication = Logic.invariant_implication

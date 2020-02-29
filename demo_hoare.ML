@@ -54,7 +54,10 @@ structure Demo_Hoare_Logic = Hoare_Logic(
     val _ = term_to_program program
     in () end
 
-  fun read_invariant ctxt str = read_term_typed ctxt \<^typ>\<open>invariant\<close> str
+  (* fun read_invariant ctxt str = read_term_typed ctxt \<^typ>\<open>invariant\<close> str *)
+
+  val invariant_typ = \<^typ>\<open>invariant\<close>
+  fun check_invariant _ _ = ()
 
   fun postcondition_trivial program_fragment pre = let
     val instruction = case HOLogic.dest_list program_fragment of
@@ -85,7 +88,6 @@ structure Demo_Hoare_Logic = Hoare_Logic(
     \<^const>\<open>hoare\<close> $ Var(("pre",0), \<^typ>\<open>invariant\<close>) $ Var(("prog",0), \<^typ>\<open>program\<close>) $ Var(("post",0), \<^typ>\<open>invariant\<close>)
     |> HOLogic.mk_Trueprop |> Thm.cterm_of \<^context> |> Goal.init
     |> SINGLE (resolve_tac \<^context> @{thms hoare_seq'} 1) |> the
-    |> \<^print>
 
   fun join_hoare ctxt _ _ (l1,l2) _ (l3,l4) _ h1 h2 = let
     val _ = if l2 <> l3 then error "mismatch" else ()
