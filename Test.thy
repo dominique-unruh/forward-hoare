@@ -8,7 +8,8 @@ ML \<open>
 open Forward_Hoare
 \<close>
 
-program' (demo_logic) prog: \<open>[Set STR ''x'' 5, Guess STR ''y'', Add STR ''x'' STR ''y'']\<close>
+(* TODO: syntax highlighting does not work in program-term *)
+program' (demo_logic) prog: \<open>PROG[x := 5; y <- ?; x += y]\<close>
 
 lemma "hoare (\<lambda>m. True) prog (\<lambda>m. m STR ''x'' = 0)"
   (is "hoare ?pre _ ?post")

@@ -2,10 +2,76 @@ theory Demo_Hoare
   imports Main Forward_Hoare
 begin
 
+section \<open>Programs\<close>
+
 type_synonym var = String.literal
 type_synonym mem = \<open>var \<Rightarrow> int\<close>
 datatype instruction = Add var var | Set var int | Guess var
 type_synonym "program" = "instruction list"
+
+subsection \<open>Concrete syntax for programs\<close>
+
+nonterminal instruction_syntax
+syntax "_instruction_set" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax" ("_ := _")
+syntax "_instruction_add" :: "id \<Rightarrow> id \<Rightarrow> instruction_syntax" ("_ += _")
+syntax "_instruction_guess" :: "id \<Rightarrow> instruction_syntax" ("_ <- ?")
+syntax "_instruction" :: "instruction_syntax \<Rightarrow> 'a" ("INSTR[_]")
+syntax "_string_of_identifier" :: "id \<Rightarrow> 'a"
+
+translations "_instruction (_instruction_guess x)" \<rightharpoonup> "CONST Guess (_string_of_identifier x)"
+translations "_instruction (_instruction_set x n)" \<rightharpoonup> "CONST Set (_string_of_identifier x) n"
+translations "_instruction (_instruction_add x y)" \<rightharpoonup> "CONST Add (_string_of_identifier x) (_string_of_identifier y)"
+
+
+parse_translation \<open>[
+("_string_of_identifier", fn ctxt => fn [Free(n,_)] => HOLogic.mk_literal n)]\<close>
+
+
+
+ML \<open>
+fun dest_bit_syntax (Const(\<^const_syntax>\<open>False\<close>,_)) = 0
+  | dest_bit_syntax (Const(\<^const_syntax>\<open>True\<close>,_)) = 1
+  | dest_bit_syntax _ = raise TERM ("dest_bit_syntax", []);
+
+val dest_bits_syntax = Integer.eval_radix 2 o map dest_bit_syntax;
+
+val dest_literal_syntax =
+  let
+    fun dest (Const (\<^const_syntax>\<open>Groups.zero_class.zero\<close>, _)) = []
+      | dest (Const (\<^const_syntax>\<open>String.empty_literal\<close>, _)) = []
+      | dest (Const (\<^const_syntax>\<open>String.Literal\<close>, _) $ b0 $ b1 $ b2 $ b3 $ b4 $ b5 $ b6 $ t) =
+          chr (dest_bits_syntax [b0, b1, b2, b3, b4, b5, b6]) :: dest t
+      | dest t = raise TERM ("dest_literal_syntax", [t]);
+  in implode o dest end;
+\<close>
+
+
+print_translation \<open>[
+(\<^const_syntax>\<open>Guess\<close>, fn ctxt => fn [str] =>
+  Const(\<^syntax_const>\<open>_instruction\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_guess\<close>,dummyT) $ Free(dest_literal_syntax str,dummyT))
+  handle TERM("dest_literal_syntax",_) => raise Match),
+(\<^const_syntax>\<open>Set\<close>, fn ctxt => fn [str,n] =>
+  Const(\<^syntax_const>\<open>_instruction\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_set\<close>,dummyT) $ Free(dest_literal_syntax str,dummyT) $ n)
+  handle TERM("dest_literal_syntax",_) => raise Match),
+(\<^const_syntax>\<open>Add\<close>, fn ctxt => fn [str1,str2] =>
+  Const(\<^syntax_const>\<open>_instruction\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_set\<close>,dummyT)
+     $ Free(dest_literal_syntax str1,dummyT) $ Free(dest_literal_syntax str2,dummyT))
+  handle TERM("dest_literal_syntax",_) => raise Match)
+]\<close>
+
+
+nonterminal "program_syntax"
+syntax "_program_cons" :: "instruction_syntax \<Rightarrow> program_syntax \<Rightarrow> program_syntax" ("_; _")
+syntax "_program_single" :: "instruction_syntax \<Rightarrow> program_syntax" ("_")
+syntax "_program" :: "program_syntax \<Rightarrow> 'a" ("PROG[_]")
+
+translations "_program (_program_cons i is)" \<rightleftharpoons> "_instruction i # _program is"
+translations "_program (_program_single i)" \<rightleftharpoons> "[_instruction i]"
+
+section \<open>Semantics\<close>
 
 fun semantics1 :: "instruction \<Rightarrow> mem \<Rightarrow> mem set" where
   "semantics1 (Set x i) m = {m(x:=i)}"
@@ -21,6 +87,7 @@ type_synonym "invariant" = "mem \<Rightarrow> bool"
 definition "hoare" :: "invariant \<Rightarrow> program \<Rightarrow> invariant \<Rightarrow> bool" where
   "hoare A p B \<longleftrightarrow> (\<forall>m. A m \<longrightarrow> (\<exists>m'\<in>semantics p m. B m'))"
 
+section \<open>Support for reasoning\<close>
 
 fun postcondition_trivial :: "instruction \<Rightarrow> invariant \<Rightarrow> invariant" where
   "postcondition_trivial (Set x i) I = (\<lambda>m. m x = i \<and> (\<exists>j. I (m(x:=j))))"
@@ -238,6 +305,5 @@ lemma append_aux2:
 
 
 ML_file "demo_hoare.ML"
-
 
 end
