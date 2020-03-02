@@ -21,7 +21,8 @@ val valid_range: term -> range -> bool
 (* extract_range program range
 Contract: valid range *)
 val extract_range: term -> range -> term
-val hoare_thm: Proof.context -> term -> term -> term -> term (* pre prog post *)
+(* hoare_thm pre prog post *)
+val hoare_thm: Proof.context -> term -> term -> term -> term
 val invariant_implication: Proof.context -> term -> term -> term
 (* val program_morphism: morphism -> program -> program *)
 end
