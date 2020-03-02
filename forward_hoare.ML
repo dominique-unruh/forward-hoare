@@ -61,23 +61,26 @@ val string_of_binding_logic = string_of_binding "hoare logic"
 val string_of_binding_const = string_of_binding Markup.constantN
 
 
-datatype ex_program = Ex_Program of exn
+(* datatype ex_program = Ex_Program of exn *)
 datatype ex_range = Ex_Range of exn
 
 type logic = {
   binding: binding,
   serial: serial,
-  read_program: Proof.context -> string -> ex_program,
+  program_term_typ: typ,
+  check_program: Proof.context -> term -> unit,
   read_range: ex_range option -> ex_range context_parser,
   pretty_range: Proof.context -> ex_range -> Pretty.T,
-  read_invariant: Proof.context -> string -> term,
-  valid_range: ex_program -> ex_range -> bool,
-  extract_range: ex_program -> ex_range -> term, (* TODO do we need that? *)
+  invariant_typ: typ,
+  check_invariant: Proof.context -> term -> unit,
+  (* read_invariant: Proof.context -> string -> term, *)
+  valid_range: term -> ex_range -> bool,
+  extract_range: term -> ex_range -> term, (* TODO do we need that? *)
   hoare_thm: Proof.context -> term -> term -> term -> term,
-  join_hoare: Proof.context -> ex_program -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
+  join_hoare: Proof.context -> term -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
   postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table,
-  invariant_implication: Proof.context -> term -> term -> term,
-  program_morphism: morphism -> ex_program -> ex_program
+  invariant_implication: Proof.context -> term -> term -> term
+  (* program_morphism: morphism -> term -> term *)
 }
 
 structure Logic_Data = Theory_Data(
@@ -100,12 +103,12 @@ fun get_the_postcondition_generator logic make_post =
  |> the' (fn _ => "Unknown postcondition generator " ^ make_post ^ " in logic " ^ logic_name logic)
 
 type var = string
-type program = { serial: serial, binding: binding, code: ex_program, logic: string }
+type program = { serial: serial, binding: binding, code: term, logic: string }
 
-fun program_morphism thy m ({serial,binding,code,logic}:program) : program = let
-  val logic' = get_logic thy logic |> the
+fun program_morphism m ({serial,binding,code,logic}:program) : program = let
+  (* val logic' = get_logic thy logic |> the *)
   in {serial=serial, binding=binding, logic=logic,
-      code = #program_morphism logic' m code} end
+      code = Morphism.term m code} end
 
 fun program_eq (p1,p2) = #serial p1 = #serial p2
 
@@ -172,7 +175,7 @@ fun add_program0 p context = let
   val ctxt = map_programs (Symtab.update_new (name, p)) context
   val ctxt = set_current_program name ctxt
   in ctxt end
-fun add_program0decl thy p m = add_program0 (program_morphism thy m p)
+fun add_program0decl p m = add_program0 (program_morphism m p)
 fun get_invariant ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #invariants) name
 fun get_hoare ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #hoares) name
 fun get_program ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #programs) name
@@ -323,20 +326,30 @@ fun extend_hoare_auto (toolkit:'a toolkit) binding (previous:string) after_qed0 
   val state = new_hoare_auto toolkit binding_step after_qed program range precondition postcondition make_post make_post_args st
 in state end
 
-fun define_program_command (toolkit:'a toolkit) logic binding content (st:'a) : 'a = let
+fun read_term_typed ctxt T str = let
+  val raw_term = Syntax.parse_term ctxt str
+  val typed = Const("_type_constraint_", T --> T) $ raw_term
+  val t = Syntax.check_term ctxt typed
+  in t end
+
+fun define_program_command (toolkit:'a toolkit) (logic:string) binding content (st:'a) : 'a = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
   val thy = Context.theory_of context
   val logic' = get_logic thy logic |> the
-  val program = #read_program logic' ctxt content
-  val st = #declaration toolkit (add_program0decl thy 
+  val program = read_term_typed ctxt (#program_term_typ logic') content
+  val _ = #check_program logic' ctxt program
+  val (_,_,st) = #define toolkit binding (Binding.suffix_name "_def" binding) program st
+  val st = #declaration toolkit (add_program0decl
       {serial=serial(), binding=binding, logic=logic, code=program}) st
 in st end
 
 fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : 'a = let 
   val context = #context toolkit st
+  val ctxt = Context.proof_of context
   val logic' = get_logic (Context.theory_of context) logic |> the
-  val term = #read_invariant logic' (Context.proof_of context) content
+  val term = read_term_typed ctxt (#invariant_typ logic') content
+  val _ = #check_invariant logic' ctxt term
   val _ = tracing ("Declaring invariant "^ string_of_binding_invariant name ^ " in logic " ^ string_of_binding_logic (#binding logic'))
   val (_,st) = add_invariant toolkit logic name term st
 in st end
@@ -363,7 +376,8 @@ fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:stri
   val ctxt = Context.proof_of context
   val invariant = get_invariant context invariant |> the' (fn _ => "Unknown invariant " ^ invariant)
   val logic = get_logic (Context.theory_of context) (#logic invariant) |> the
-  val term = #read_invariant logic ctxt term
+  val term = read_term_typed ctxt (#invariant_typ logic) term
+  val _ = #check_invariant logic ctxt term
   val goal = #invariant_implication logic ctxt (#const invariant) term
   fun after_qed thm = #note toolkit binding thm
   val state = #theorem toolkit after_qed goal st

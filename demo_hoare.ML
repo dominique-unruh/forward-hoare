@@ -17,15 +17,17 @@ datatype instruction = Add of var*var | Set of var*int | Guess of var
   fun term_to_program t = HOLogic.dest_list t |> map term_to_instruction
 
 structure Demo_Hoare_Logic = Hoare_Logic(
-  type program = instruction list
+  (* type program = instruction list *)
   type range = int * int
 
   val binding = \<^binding>\<open>demo_logic\<close>
 
-  fun read_program ctxt str = let
+  val program_term_typ = \<^typ>\<open>program\<close>
+
+(*   fun read_program ctxt str = let
     val t = Syntax.read_term ctxt str
     val p = term_to_program t
-  in p end
+  in p end *)
     
   (* TODO support relative ranges *)
   fun read_range _ : range context_parser = 
@@ -35,22 +37,27 @@ structure Demo_Hoare_Logic = Hoare_Logic(
 
   fun hoare_thm _ pre prog post = \<^const>\<open>hoare\<close> $ pre $ prog $ post |> HOLogic.mk_Trueprop
 
-  fun valid_range (program:program) ((start,endd):range) =
-    start <= endd andalso start >= 0 andalso endd <= length program
+  fun valid_range (program:term) ((start,endd):range) =
+    start <= endd andalso start >= 0 andalso endd <= length (HOLogic.dest_list program)
 
   fun invariant_implication _ (t1:term) (t2:term) = 
     \<^const>\<open>pc_imp\<close> $ t1 $ t2 |> HOLogic.mk_Trueprop
 
-  fun extract_range (program:program) ((start,endd):range) : term =
-    program |> drop start |> take (endd-start) |> program_to_term
+  fun extract_range (program:term) ((start,endd):range) : term =
+    program |> HOLogic.dest_list |> drop start |> take (endd-start) |> HOLogic.mk_list \<^typ>\<open>instruction\<close>
 
-  fun read_term_typed ctxt T str = let
-    val raw_term = Syntax.parse_term ctxt str
-    val typed = Const("_type_constraint_", T --> T) $ raw_term
-    val t = Syntax.check_term ctxt typed
-    in t end
+  fun check_program ctxt program = let
+    val list = HOLogic.dest_list program
+               handle TERM _ => error "Invalid program: should be a list of instructions"
+    val _ = List.app (fn t => (term_to_instruction t 
+            handle TERM _ => error ("Invalid instruction: " ^ Syntax.string_of_term ctxt t); ())) list
+    val _ = term_to_program program
+    in () end
 
-  fun read_invariant ctxt str = read_term_typed ctxt \<^typ>\<open>invariant\<close> str
+  (* fun read_invariant ctxt str = read_term_typed ctxt \<^typ>\<open>invariant\<close> str *)
+
+  val invariant_typ = \<^typ>\<open>invariant\<close>
+  fun check_invariant _ _ = ()
 
   fun postcondition_trivial program_fragment pre = let
     val instruction = case HOLogic.dest_list program_fragment of
@@ -70,7 +77,7 @@ structure Demo_Hoare_Logic = Hoare_Logic(
       (post, tac)
     end
   
-  fun program_morphism _ prog = prog
+  (* fun program_morphism _ prog = prog *)
 
   val postcondition_generators = Symtab.make [
     ("trivial", Scan.succeed postcondition_trivial |> Scan.lift),
@@ -81,7 +88,6 @@ structure Demo_Hoare_Logic = Hoare_Logic(
     \<^const>\<open>hoare\<close> $ Var(("pre",0), \<^typ>\<open>invariant\<close>) $ Var(("prog",0), \<^typ>\<open>program\<close>) $ Var(("post",0), \<^typ>\<open>invariant\<close>)
     |> HOLogic.mk_Trueprop |> Thm.cterm_of \<^context> |> Goal.init
     |> SINGLE (resolve_tac \<^context> @{thms hoare_seq'} 1) |> the
-    |> \<^print>
 
   fun join_hoare ctxt _ _ (l1,l2) _ (l3,l4) _ h1 h2 = let
     val _ = if l2 <> l3 then error "mismatch" else ()
@@ -97,8 +103,8 @@ structure Demo_Hoare_Logic = Hoare_Logic(
 
 val ex_range = Demo_Hoare_Logic.ex_range
 val range_ex = Demo_Hoare_Logic.range_ex
-val ex_program = Demo_Hoare_Logic.ex_program
-val program_ex = Demo_Hoare_Logic.program_ex
+(* val ex_program = Demo_Hoare_Logic.ex_program *)
+(* val program_ex = Demo_Hoare_Logic.program_ex *)
 val logic = Demo_Hoare_Logic.logic
 
 fun use_facts_tac ctxt thms = 
