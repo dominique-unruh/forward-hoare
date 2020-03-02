@@ -31,13 +31,37 @@ proof
 
   hoare step1: range 1 pre start post step1 = default
 
+  hoare' invariant_has step1x: step1 \<rightarrow> "\<lambda>m. m STR ''x'' = 1"
+    unfolding step1_inv_def postcondition_default_def
+    by auto
+
   hoare step13: extends step1 range 3 post step13=default
 
-  thm step13_valid
+  hoare' invariant_has step13x: step13 \<rightarrow> "\<lambda>m. m STR ''x'' = 1"
+    unfolding step13_inv_def postcondition_default_def
+    using step1x
+    by auto
+
+  hoare' invariant_has step13z: step13 \<rightarrow> "\<lambda>m. m STR ''z'' = 1"
+    unfolding step13_inv_def postcondition_default_def
+    by auto
 
   hoare step132: extends step13 range 2 post step132=default
 
-  thm step132_valid
+  hoare' invariant_has step132x: step132 \<rightarrow> "\<lambda>m. m STR ''x'' = 1"
+    unfolding step132_inv_def postcondition_default_def
+    using step13x
+    by auto
+
+  hoare' invariant_has step132z: step132 \<rightarrow> "\<lambda>m. m STR ''z'' = 1"
+    unfolding step132_inv_def postcondition_default_def
+    using step13z
+    by auto
+
+  hoare' invariant_has step132y: step132 \<rightarrow> "\<lambda>m. m STR ''y'' = 1"
+    unfolding step132_inv_def postcondition_default_def
+    using step13z
+    by auto
 
 qed
 

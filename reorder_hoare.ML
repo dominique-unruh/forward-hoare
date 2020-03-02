@@ -145,7 +145,7 @@ structure Logic = Hoare_Logic(
 
   fun invariant_implication _ inv1 inv2 =
     Logic.all_const \<^typ>\<open>mem\<close> $ Abs("mem",\<^typ>\<open>mem\<close>, 
-      HOLogic.mk_eq (inv1 $ Bound 0, inv2 $ Bound 0))
+      Logic.mk_implies (inv1 $ Bound 0 |> HOLogic.mk_Trueprop, inv2 $ Bound 0 |> HOLogic.mk_Trueprop))
 )
 
 
