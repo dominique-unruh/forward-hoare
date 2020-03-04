@@ -37,6 +37,11 @@ lemma postcondition_default_valid:
 
 
 definition "independent_of B x = (\<forall>m1 m2. (\<forall>y\<noteq>x. m1 y = m2 y) \<longrightarrow> B m1 = B m2)"
+lemma independent_ofI[intro]: 
+  assumes "\<And>m1 m2. (\<And>y. y\<noteq>x \<Longrightarrow> m1 y = m2 y) \<Longrightarrow> B m1 = B m2"
+  shows "independent_of B x"
+  unfolding independent_of_def using assms by metis
+
 definition "instructions_commute a b \<longleftrightarrow> semantics [a,b] = semantics [b,a]"
 
 
@@ -62,11 +67,6 @@ proof (unfold instructions_commute_def, rule ext, rename_tac mem)
     unfolding 1 2
     using assms(3) by auto
 qed
-
-(* 
-lemma everything_commutes: "semantics [a,b] = semantics [b,a]"
-  sorry *)
-
 
 lemma insert_into_ordered_singleton_aux:
   "semantics [i] = semantics [i]"
@@ -117,8 +117,6 @@ lemma independent_of_var:
   shows "independent_of (\<lambda>m. m x) y"
   using assms unfolding independent_of_def by auto
 
-
-
 lemma sort_program_empty_aux:
   "semantics [] = semantics []"
   by simp
@@ -129,11 +127,16 @@ lemma sort_program_aux:
   shows "semantics (i#p) = semantics r"
   using assms by (simp add: semantics.simps[abs_def] o_def)
 
+lemma semantics_seq:
+  "semantics (p@q) = semantics q o semantics p"
+  apply (rule ext, rename_tac m)
+  by (induction p; simp)
+
 lemma hoare_seq:
   assumes "hoare A p B"
   assumes "hoare B q C"
   shows "hoare A (p@q) C"
-  sorry
+  using assms unfolding hoare_def semantics_seq by auto
 
 lemma append_conv0: "[] @ z \<equiv> z"
   by simp
@@ -147,6 +150,29 @@ lemma join_hoare:
   assumes "semantics p13 = semantics srt"
   shows "hoare invariant1 srt invariant3"
   using assms unfolding hoare_def by simp
+
+
+lemma wp[hoare_wp add]: 
+  assumes "invariant \<equiv> postcondition_default [Set x e] A"
+  assumes imp: "\<And>m. A m \<Longrightarrow> B (m(x:=e m))"
+  shows "\<And>m. invariant m \<longrightarrow> B m"
+  using imp unfolding assms(1) postcondition_default_def by auto
+
+lemma untouched[hoare_untouched add]: 
+  assumes "invariant \<equiv> postcondition_default [Set x e] A"
+  assumes indep: "independent_of B x"
+  assumes imp: "\<And>m. A m \<Longrightarrow> B m"
+  shows "\<And>m. invariant m \<longrightarrow> B m"
+  using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
+  apply auto
+  by (metis fun_upd_def)
+
+lemma updated[hoare_updated add]:
+  assumes "invariant \<equiv> postcondition_default [Set x e] A"
+  assumes indep: "independent_of e x"
+  shows "\<And>m. invariant m \<longrightarrow> m x = e m"
+  using assms unfolding assms postcondition_default_def independent_of_def by auto
+
 
 ML_file \<open>reorder_hoare.ML\<close>
 

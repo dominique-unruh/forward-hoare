@@ -302,8 +302,6 @@ lemma append_aux2:
   shows "xs = [] @ xs"
   by auto
 
-
-
 ML_file "demo_hoare.ML"
 
 end

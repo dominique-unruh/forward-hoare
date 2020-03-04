@@ -5,9 +5,9 @@ theory Forward_Hoare
     and "invariant'" :: thy_decl
 
     and "hoare" :: prf_decl % "proof"
-    and "hoare'" :: prf_decl % "proof"
+    and "hoare'" :: prf_goal % "proof"
     and "Hoare" :: thy_decl
-    and "Hoare'" :: thy_decl
+    and "Hoare'" :: thy_goal
 
     and "range" "pre" "post" "extends" "program" "invariant_has"
 begin

@@ -128,24 +128,24 @@ structure Logic = Hoare_Logic(
 
   fun hoare_thm _ pre prog post = \<^const>\<open>hoare\<close> $ pre $ prog $ post |> HOLogic.mk_Trueprop
 
-  fun join_hoare ctxt program invariant1 range12 invariant2 range23 invariant3 thm12 thm23 = let
+  fun join_hoare ctxt program _ range12 _ range23 _ thm12 thm23 = let
     val p12 = extract_range program range12
     val p23 = extract_range program range23
     (* hoare invariant1 (p12@p23) invariant3 *)
-    val hoare_append = (@{thm hoare_seq} OF [thm12, thm23]) |> \<^print>
+    val hoare_append = (@{thm hoare_seq} OF [thm12, thm23])
     val p12_p23 = @{const append(instruction)} $ p12 $ p23
     (* p12@p23 \<equiv> p13 *)
-    val p13_thm = append_conv (Thm.cterm_of ctxt p12_p23) |> \<^print>
+    val p13_thm = append_conv (Thm.cterm_of ctxt p12_p23)
     val p13 = Thm.rhs_of p13_thm |> Thm.term_of
-    val (range13,sorted,sorted_thm) = sort_program ctxt (range12@range23, p13)
-    val _ = sorted_thm |> \<^print>
+    val (range13,_,sorted_thm) = sort_program ctxt (range12@range23, p13)
+    (* val _ = sorted_thm |> \<^print> *)
     val thm = @{thm join_hoare} OF [hoare_append, p13_thm, sorted_thm]
   in (range13,thm) end
 
 
   fun invariant_implication _ inv1 inv2 =
     Logic.all_const \<^typ>\<open>mem\<close> $ Abs("mem",\<^typ>\<open>mem\<close>, 
-      Logic.mk_implies (inv1 $ Bound 0 |> HOLogic.mk_Trueprop, inv2 $ Bound 0 |> HOLogic.mk_Trueprop))
+      HOLogic.mk_imp (inv1 $ Bound 0, inv2 $ Bound 0) |> HOLogic.mk_Trueprop)
 )
 
 
