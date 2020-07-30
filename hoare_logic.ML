@@ -2,9 +2,10 @@ signature HOARE_LOGIC_ARGS =
 sig
 (* type program *)
 type range
+type options
 val binding: binding
-val program_term_typ: typ
-val invariant_typ: typ
+val program_term_typ: options -> typ
+val invariant_typ: options -> typ
 (* Can assume that term is of type program_term_typ *)
 val check_program: Proof.context -> term -> unit
 (* Can assume that term is of type invariant_typ *)
@@ -24,7 +25,9 @@ val extract_range: term -> range -> term
 (* hoare_thm pre prog post *)
 val hoare_thm: Proof.context -> term -> term -> term -> term
 val invariant_implication: Proof.context -> term -> term -> term
-(* val program_morphism: morphism -> program -> program *)
+val default_options: options
+(* set_option m name value options *)
+val set_option: string -> string -> Proof.context -> morphism -> options -> options
 end
 
 signature HOARE_LOGIC =
@@ -46,8 +49,10 @@ open Forward_Hoare
 
 (* type program = Logic.program *)
 type range = Logic.range
-exception Program of program
+type options = Logic.options
+(* exception Program of program *)
 exception Range of range
+exception Options of options
 
 fun err str = error (Binding.name_of Logic.binding ^ "." ^ str)
 
@@ -60,23 +65,49 @@ fun ex_range range = Ex_Range (Range range)
 fun range_ex (Ex_Range (Range prog)) = prog
   | range_ex (Ex_Range e) = err ("range_ex: " ^ \<^make_string> e)
 
+fun ex_options options = Ex_Options (Options options)
+fun options_ex (Ex_Options (Options options)) = options
+  | options_ex (Ex_Options e) = err ("options_ex: " ^ \<^make_string> e)
+
 fun read_range relative = 
   Logic.read_range (Option.map range_ex relative) >> ex_range
 
 fun pretty_range ctxt range = Logic.pretty_range ctxt (range_ex range)
 
 fun valid_range prog range = Logic.valid_range prog (range_ex range)
-fun extract_range prog range = Logic.extract_range prog (range_ex range)
+fun extract_range ctxt prog range = let
+  val fragment = Logic.extract_range prog (range_ex range)
+  val _ = catch_internal_error Logic.binding "typechecking result of extract_range" (Sign.cert_term (Proof_Context.theory_of ctxt)) fragment
+  in fragment end
+
 fun join_hoare ctxt prog a r1 b r2 c h1 h2 = Logic.join_hoare ctxt prog a (range_ex r1) b (range_ex r2) c h1 h2
   |> apfst ex_range
+
+fun hoare_thm ctxt pre prog post = let
+  val term = Logic.hoare_thm ctxt pre prog post
+  val _ = catch_internal_error Logic.binding "typechecking result of hoare_thm" (Sign.cert_prop (Proof_Context.theory_of ctxt)) term
+  in term end
+
+fun invariant_implication ctxt a b = let
+  val term = Logic.invariant_implication ctxt a b
+  val _ = catch_internal_error Logic.binding "typechecking result of invariant_implication" (Sign.cert_prop (Proof_Context.theory_of ctxt)) term
+  in term end
+
+val default_options = ex_options Logic.default_options
+
+fun set_option name content ctxt m options = ex_options (Logic.set_option name content ctxt m (options_ex options))
+
+fun program_term_typ options = Logic.program_term_typ (options_ex options)
+
+fun invariant_typ options = Logic.invariant_typ (options_ex options)
 
 (* fun program_morphism m prog = ex_program (Logic.program_morphism m (program_ex prog)) *)
 
 val logic : logic = {
   serial = serial(),
   binding = Logic.binding,
-  program_term_typ = Logic.program_term_typ,
-  invariant_typ = Logic.invariant_typ,
+  program_term_typ = program_term_typ,
+  invariant_typ = invariant_typ,
   check_program = Logic.check_program,
   check_invariant = Logic.check_invariant,
   (* read_program = read_program, *)
@@ -84,11 +115,13 @@ val logic : logic = {
   pretty_range = pretty_range,
   extract_range = extract_range,
   valid_range = valid_range,
-  hoare_thm = Logic.hoare_thm,
+  hoare_thm = hoare_thm,
   (* read_invariant = Logic.read_invariant, *)
   join_hoare = join_hoare,
   postcondition_generators = Logic.postcondition_generators,
-  invariant_implication = Logic.invariant_implication
+  invariant_implication = invariant_implication,
+  default_options = default_options,
+  set_option = set_option
   (* program_morphism = program_morphism *)
 }
 

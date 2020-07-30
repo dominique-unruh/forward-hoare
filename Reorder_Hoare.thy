@@ -254,5 +254,4 @@ translations "_program (_program_single i)" \<rightleftharpoons> "[_instruction 
 
 term \<open>PROG[x := 0; x := $x+1]\<close>
 
-
 end

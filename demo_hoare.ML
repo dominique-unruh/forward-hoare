@@ -20,9 +20,13 @@ structure Demo_Hoare_Logic = Hoare_Logic(
   (* type program = instruction list *)
   type range = int * int
 
+  type options = unit
+  val default_options = ()
+  fun set_option _ _ _ _ _ = error "Logic demo_logic does not have any options"
+
   val binding = \<^binding>\<open>demo_logic\<close>
 
-  val program_term_typ = \<^typ>\<open>program\<close>
+  fun program_term_typ _ = \<^typ>\<open>program\<close>
 
 (*   fun read_program ctxt str = let
     val t = Syntax.read_term ctxt str
@@ -56,7 +60,7 @@ structure Demo_Hoare_Logic = Hoare_Logic(
 
   (* fun read_invariant ctxt str = read_term_typed ctxt \<^typ>\<open>invariant\<close> str *)
 
-  val invariant_typ = \<^typ>\<open>invariant\<close>
+  fun invariant_typ _ = \<^typ>\<open>invariant\<close>
   fun check_invariant _ _ = ()
 
   fun postcondition_trivial program_fragment pre = let
