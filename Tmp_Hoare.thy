@@ -9,39 +9,66 @@ definition "less_eq_card A B \<longleftrightarrow> (\<exists>f. inj_on f A \<and
 type_synonym ('mem,'var) expression = \<open>'mem \<Rightarrow> 'var\<close>
 type_synonym 'mem untyped_expression = \<open>('mem,'mem) expression\<close>
 
-definition \<open>valid_var f S \<longleftrightarrow> (\<exists>R. bij_betw f UNIV (S \<times> R))\<close> 
-definition "has_variables (_::'mem itself) (_::'val itself) \<longleftrightarrow> (\<exists>f::'mem\<Rightarrow>'val\<times>'mem. valid_var f UNIV)"
+definition \<open>valid_var = (\<lambda>(f,S). \<exists>R. bij_betw f UNIV (S \<times> R))\<close> 
+definition "has_variables (_::'mem itself) (_::'val itself) \<longleftrightarrow> (\<exists>f::'mem\<Rightarrow>'val\<times>'mem. valid_var (f, UNIV))"
 
-lemma has_variablesI[intro]: "valid_var (f::'mem\<Rightarrow>'val\<times>'mem) UNIV \<Longrightarrow> has_variables TYPE('mem) TYPE('val)"
+lemma has_variablesI[intro]: "valid_var (f::'mem\<Rightarrow>'val\<times>'mem, UNIV) \<Longrightarrow> has_variables TYPE('mem) TYPE('val)"
   unfolding has_variables_def by auto
 
-typedef ('mem,'val) var = "{f::'mem \<Rightarrow> 'val \<times> 'mem. has_variables TYPE('mem) TYPE('val) \<longrightarrow> valid_var f UNIV}"
+typedef ('mem,'val) var = "{f::'mem \<Rightarrow> 'val \<times> 'mem. has_variables TYPE('mem) TYPE('val) \<longrightarrow> valid_var (f, UNIV)}"
   unfolding has_variables_def by auto
 setup_lifting type_definition_var
 
 
-definition "some_embedding = (SOME i::'a\<Rightarrow>'b. inj i)"
+definition "some_embedding = (if less_eq_card (UNIV::'a set) (UNIV::'b set) then
+(SOME i::'a\<Rightarrow>'b. inj i \<and> i undefined = undefined) else (\<lambda>_. undefined))"
 
-definition "dummy_untyped_var = (\<lambda>x::'mem. (some_embedding()::'mem,x), {some_embedding()::'mem})"
-lemma dummy_untyped_var_valid: "dummy_untyped_var \<in> {(f, S). valid_var f S}"
+definition "dummy_untyped_var = (\<lambda>x::'mem. (undefined::'mem,x), {undefined::'mem})"
+lemma dummy_untyped_var_valid: "valid_var dummy_untyped_var"
   unfolding valid_var_def dummy_untyped_var_def apply auto
   apply (rule exI[of _ UNIV]) 
   apply (rule bij_betw_byWitness[of _ snd]) by auto
 
 typedef 'mem untyped_var = 
-  "{(f::'mem \<Rightarrow> 'mem \<times> 'mem, S). valid_var f S}"
-  by (rule exI[of _ dummy_untyped_var], rule dummy_untyped_var_valid)
+  "Collect valid_var :: (('mem\<Rightarrow>'mem\<times>'mem)\<times>'mem set) set"
+  by (rule exI[of _ dummy_untyped_var], simp add: dummy_untyped_var_valid)
 setup_lifting type_definition_untyped_var
 
-lemma some_embedding_inj:
-  assumes "less_eq_card (UNIV::'a set) (UNIV::'b set)"
-  shows "inj (some_embedding::'a\<Rightarrow>'b)"
-  unfolding some_embedding_def
-  apply (rule someI_ex[of inj])
-  using assms unfolding less_eq_card_def by auto
+lemma 
+  shows some_embedding_inj: "less_eq_card (UNIV::'a set) (UNIV::'b set) \<Longrightarrow> inj (some_embedding::'a\<Rightarrow>'b)" 
+    and some_embedding_undefined[simp]: "(some_embedding::'a\<Rightarrow>'b) undefined = undefined"
+proof -
+  let ?i = "some_embedding::'a\<Rightarrow>'b"
+  let ?less = "less_eq_card (UNIV::'a set) (UNIV::'b set)"
+  have props: "inj ?i \<and> ?i undefined = undefined" if "?less"
+  proof -
+    from that obtain i::"'a \<Rightarrow> 'b" where "inj i"
+      unfolding less_eq_card_def by auto
+    define j where "j = Fun.swap undefined (i undefined) id \<circ> i"
+    have 1: "inj j"
+      by (simp add: \<open>inj i\<close> j_def inj_compose)
+    have 2: "j undefined = undefined"
+      unfolding j_def by auto
+    show ?thesis
+      unfolding some_embedding_def apply (simp add: that)
+      apply (rule someI_ex[of "\<lambda>i. inj i \<and> i undefined = undefined"])
+      using 1 2 by auto
+  qed
+  then show "?less \<Longrightarrow> inj ?i" by simp
+
+  have "?i undefined = undefined" if "\<not> ?less"
+    using that unfolding some_embedding_def by simp
+  with props
+  show "?i undefined = undefined"
+    by auto
+qed
+
+lemma some_embedding_unit[simp]: "some_embedding () = undefined"
+  unfolding unit_eq[of undefined, symmetric] 
+  by (rule some_embedding_undefined)
 
 lemma valid_var_less_eq_card:
-  assumes "valid_var (f::'a\<Rightarrow>'b\<times>'a) S"
+  assumes "valid_var (f::'a\<Rightarrow>'b\<times>'a, S)"
   shows "less_eq_card S (UNIV::'a set)"
 proof -
   from assms obtain R where bij: \<open>bij_betw f UNIV (S \<times> R)\<close>
@@ -72,16 +99,19 @@ lemma bij_betw_map_prod:
   by (auto simp add: bij_betw_inv_into_left bij_betw_inv_into_right bij_betw_apply 
                      bij_betw_imp_surj_on inv_into_into)
 
-lift_definition mk_var_untyped :: "('mem,'val) var \<Rightarrow> 'mem untyped_var" is
-  \<open>\<lambda>f::'mem\<Rightarrow>'val \<times> 'mem. 
-      (if valid_var f UNIV then
+definition "mk_var_untyped_raw (f::'mem\<Rightarrow>'val \<times> 'mem) =
+      (if valid_var (f, UNIV) then
       (map_prod (some_embedding::'val\<Rightarrow>'mem) id \<circ> f,
        range (some_embedding::'val\<Rightarrow>'mem))
-      else dummy_untyped_var)\<close>
-  subgoal for f
-proof (cases \<open>valid_var f UNIV\<close>)
+      else dummy_untyped_var)"
+
+lemma mk_var_untyped_raw_valid: 
+  fixes f :: "'mem \<Rightarrow> 'val \<times> 'mem"
+  shows "valid_var (mk_var_untyped_raw f)"
+proof (cases \<open>valid_var (f, UNIV)\<close>)
   case False
   then show ?thesis
+    unfolding mk_var_untyped_raw_def
     using dummy_untyped_var_valid by auto
 next
   case True
@@ -99,26 +129,29 @@ next
     by simp
   from bij_f bij_i have "bij_betw (map_prod i id \<circ> f) UNIV (range i \<times> R)"
     using bij_betw_trans by blast
-  then have \<open>valid_var (map_prod i id \<circ> f) (range i)\<close>
+  then have \<open>valid_var (map_prod i id \<circ> f, range i)\<close>
     unfolding valid_var_def by auto
   with True show ?thesis
-    by (simp add: i_def)
-qed done
+    by (simp add: i_def mk_var_untyped_raw_def)
+qed
+
+lift_definition mk_var_untyped :: "('mem,'val) var \<Rightarrow> 'mem untyped_var" is mk_var_untyped_raw
+  by (simp add: mk_var_untyped_raw_valid)
 
 lift_definition unit_var :: "('mem,unit) var" is "\<lambda>m. ((),m)"
-  unfolding valid_var_def apply (rule exI[of _ UNIV])
+  unfolding valid_var_def case_prod_beta apply (rule exI[of _ UNIV])
   apply auto
   by (metis (mono_tags, hide_lams) bijI' old.unit.exhaust snd_conv surj_pair)
 
 lemma unit_var_untyped: "Rep_untyped_var (mk_var_untyped unit_var) = dummy_untyped_var"
 proof -
-  have valid: "valid_var (Pair ()) UNIV"
-    unfolding valid_var_def apply (rule exI[of _ UNIV])
+  have valid: "valid_var (Pair (), UNIV)"
+    unfolding valid_var_def case_prod_beta apply (rule exI[of _ UNIV])
     apply auto
     by (metis (mono_tags, hide_lams) bijI' old.unit.exhaust snd_conv surj_pair top_unit_def unit_var.rep_eq)
   show ?thesis
     apply transfer
-    apply (simp add: valid dummy_untyped_var_def )
+    apply (simp add: valid dummy_untyped_var_def mk_var_untyped_raw_def)
     unfolding dummy_untyped_var_def by auto
 qed
 
@@ -129,10 +162,29 @@ definition Set :: "('mem,'val) var \<Rightarrow> ('mem,'val) expression \<Righta
 type_synonym 'mem "program" = "'mem instruction list"
 
 lift_definition update_var :: "('mem,'a) var \<Rightarrow> 'a \<Rightarrow> 'mem \<Rightarrow> 'mem" is
-  "\<lambda>x a m. inv x (a, snd (x m))".
+  "\<lambda>x a m. if valid_var (x, UNIV) then inv x (a, snd (x m)) else m".
 
 lift_definition eval_var :: "('mem,'a) var \<Rightarrow> 'mem \<Rightarrow> 'a" is
-  \<open>\<lambda>x m. fst (x m)\<close>.
+  \<open>\<lambda>x m. if valid_var (x, UNIV) then fst (x m) else undefined\<close>.
+
+lemma update_var_invalid: 
+  fixes x :: "('mem,'a) var"
+  assumes "\<not> has_variables TYPE('mem) TYPE('a)"
+  shows "update_var x a m = m"
+  apply (transfer fixing: m) 
+  using assms by auto
+
+lemma eval_var_invalid: 
+  fixes x :: "('mem,'a) var"
+  assumes "\<not> has_variables TYPE('mem) TYPE('a)"
+  shows "eval_var x m = undefined"
+proof (transfer fixing: m)
+  fix x :: "'mem \<Rightarrow> 'a \<times> 'mem"
+  from assms have "\<not> valid_var (x, UNIV)"
+    by auto
+  then show "(if valid_var (x, UNIV) then fst (x m) else undefined) = undefined"
+    by simp
+qed
 
 definition "force_into a S = (if a\<in>S then a else (SOME a. a\<in>S))"
 lemma force_into_forces:
@@ -149,53 +201,85 @@ lemma force_into_singleton[simp]:
   by (auto simp: force_into_def)
 
 lift_definition update_untyped_var :: "'mem untyped_var \<Rightarrow> 'mem \<Rightarrow> 'mem \<Rightarrow> 'mem" is
-  "\<lambda>(x,S) a m. inv x (force_into a S, snd (x m))".
+  "\<lambda>(x,S) a m. if valid_var (x, S) then inv x (force_into a S, snd (x m)) else m".
 
 lift_definition eval_untyped_var :: "'mem untyped_var \<Rightarrow> 'mem \<Rightarrow> 'mem" is
-  \<open>\<lambda>(x,S) m. fst (x m)\<close>.
+  \<open>\<lambda>(x,S) m. if valid_var (x, S) then fst (x m) else undefined\<close>.
 
 lemma eval_untyped_var:
   fixes x :: "('mem,'val) var"
-  assumes "has_variables TYPE('mem) TYPE('val)"
   shows "eval_untyped_var (mk_var_untyped x) m
        = (some_embedding::'val\<Rightarrow>'mem) (eval_var x m)"
-  apply transfer using assms by auto
+proof (cases "has_variables TYPE('mem) TYPE('val)")
+  case True
+  define x' where "x' = mk_var_untyped x" (* Trick to make transfer insert facts about mk_var_untyped x *)
+  then show ?thesis
+    apply transfer by (auto simp: True mk_var_untyped_raw_def)
+next
+  case False
+  define x' where "x' = mk_var_untyped x" (* Trick to make transfer insert facts about mk_var_untyped x *)
+  then show ?thesis
+    apply transfer by (auto simp: False mk_var_untyped_raw_def dummy_untyped_var_def)
+qed
 
 lemma update_untyped_var:
   fixes x :: "('mem,'val) var" and a :: 'val
-  assumes "has_variables TYPE('mem) TYPE('val)"
   shows "update_untyped_var (mk_var_untyped x) ((some_embedding::'val\<Rightarrow>'mem) a) m
        = update_var x a m"
-  apply transfer subgoal premises valid for x a m
-proof -
-  from assms valid have valid: "valid_var x UNIV" by auto
-  then obtain R where bij_x: \<open>bij_betw x UNIV (UNIV \<times> R)\<close>
-    unfolding valid_var_def by auto
-  then have "inj x" 
-    using bij_betw_def by blast
-  define i where "i = (some_embedding::'val\<Rightarrow>'mem)"
+proof (cases "has_variables TYPE('mem) TYPE('val)")
+  case True
+  show ?thesis
+  proof transfer
+    fix x :: "'mem \<Rightarrow> 'val \<times> 'mem" and a m
+    have valid_untyped: "valid_var (mk_var_untyped_raw x)"
+      by (simp add: mk_var_untyped_raw_valid)
+    assume \<open>has_variables TYPE('mem) TYPE('val) \<longrightarrow> valid_var (x, UNIV)\<close>
+    with True have  valid: "valid_var (x, UNIV)" by simp
+    then obtain R where bij_x: \<open>bij_betw x UNIV (UNIV \<times> R)\<close>
+      unfolding valid_var_def by auto
+    then have "inj x" 
+      using bij_betw_def by blast
+    define i where "i = (some_embedding::'val\<Rightarrow>'mem)"
 
-  have "(map_prod i id \<circ> x) (inv x (a, snd (x m))) = (i a, snd (x m))"
-    apply (auto)
-    apply (subst bij_betw_inv_into_right[where f=x])
-    using bij_x apply auto
-    using bij_betw_apply mem_Times_iff by fastforce
-  then have "inv (map_prod i id \<circ> x) (i a, snd (x m)) = inv x (a, snd (x m))"
-    apply (rule inv_f_eq[rotated])
-    using \<open>inj x\<close> by (metis i_def inj_compose inv_id prod.inj_map some_embedding_inj surj_id surj_imp_inj_inv valid valid_var_less_eq_card)
-  then show ?thesis
-    by (simp add: valid i_def)
-qed done
+    have "(map_prod i id \<circ> x) (inv x (a, snd (x m))) = (i a, snd (x m))"
+      apply (auto)
+      apply (subst bij_betw_inv_into_right[where f=x])
+      using bij_x apply auto
+      using bij_betw_apply mem_Times_iff by fastforce
+    then have "inv (map_prod i id \<circ> x) (i a, snd (x m)) = inv x (a, snd (x m))"
+      apply (rule inv_f_eq[rotated])
+      using \<open>inj x\<close> by (metis i_def inj_compose inv_id prod.inj_map some_embedding_inj surj_id surj_imp_inj_inv valid valid_var_less_eq_card)
+    then show \<open>(case mk_var_untyped_raw x of
+        (x, S) \<Rightarrow> \<lambda>a m. if valid_var (x, S) then inv x (force_into a S, snd (x m)) else m)
+        (i a) m =
+       (if valid_var (x, UNIV) then inv x (a, snd (x m)) else m)\<close>
+      using valid_untyped valid by (simp add: mk_var_untyped_raw_def i_def)
+  qed
+next
+  case False
+  show ?thesis
+  proof transfer
+    fix x :: "'mem \<Rightarrow> 'val \<times> 'mem" and a m
+        have valid_untyped: "valid_var (mk_var_untyped_raw x)"
+      by (simp add: mk_var_untyped_raw_valid)
+    from False have invalid: \<open>\<not> valid_var (x, UNIV)\<close>
+      by auto
+    show \<open>(case mk_var_untyped_raw x of
+        (x, S) \<Rightarrow> \<lambda>a m. if valid_var (x, S) then inv x (force_into a S, snd (x m)) else m)
+        (some_embedding a) m =
+       (if valid_var (x, UNIV) then inv x (a, snd (x m)) else m)\<close>
+      using valid_untyped apply (simp add: invalid case_prod_beta mk_var_untyped_raw_def dummy_untyped_var_def)
+      by (meson f_inv_into_f prod.inject rangeI)
+  qed
+qed
 
 lemma eval_update_var[simp]:
   fixes m :: 'mem and a :: 'a
   assumes "has_variables TYPE('mem) TYPE('a)"
   shows \<open>eval_var x (update_var x a m) = a\<close>
-proof transfer
+proof (transfer, simp add: assms)
   fix x :: "'mem \<Rightarrow> 'a \<times> 'mem" and a::'a and m::'mem
-  assume "has_variables TYPE('mem) TYPE('a) \<longrightarrow> valid_var x UNIV"
-  with assms have "valid_var x UNIV"
-    by simp
+  assume "valid_var (x, UNIV)"
   then obtain R where bij: "bij_betw x UNIV (UNIV \<times> R)"
     unfolding valid_var_def by auto
   show "fst (x (inv x (a, snd (x m)))) = a"
@@ -211,10 +295,9 @@ fun semantics1 :: "'mem instruction \<Rightarrow> 'mem \<Rightarrow> 'mem" where
 
 lemma semantics1_Set[simp]:
   fixes x :: "('mem,'val) var" and a :: 'val
-  assumes "has_variables TYPE('mem) TYPE('val)"
   shows "semantics1 (Set x e) m = update_var x (e m) m"
   unfolding Set_def apply simp
-  using assms by (rule update_untyped_var)
+  by (rule update_untyped_var)
 
 lemma semantics1_Set_invalid:
   fixes x :: "('mem,'val) var" and a :: 'val
@@ -222,18 +305,17 @@ lemma semantics1_Set_invalid:
   shows "semantics1 (Set x e) m = m"
 proof (simp add: Set_def, transfer)
   fix x :: "'mem \<Rightarrow> 'val \<times> 'mem" and e :: "'mem\<Rightarrow>'val" and m :: 'mem
-  from assms have invalid: "\<not> valid_var x UNIV"
+  from assms have invalid: "\<not> valid_var (x, UNIV)"
     unfolding has_variables_def by auto
   have \<open>inv (Pair (some_embedding ())) (force_into (some_embedding (e m)) {some_embedding ()}, m) = m\<close>
     using [[show_types, show_consts]]
     apply auto
     by (meson Pair_inject f_inv_into_f rangeI)
-  with invalid show "(case if valid_var x UNIV then (map_prod some_embedding id \<circ> x, range some_embedding)
-             else dummy_untyped_var of
-        (x, S) \<Rightarrow> \<lambda>a m. inv x (force_into a S, snd (x m)))
+  with invalid show "(case mk_var_untyped_raw x of
+        (x, S) \<Rightarrow> \<lambda>a m. if valid_var (x, S) then inv x (force_into a S, snd (x m)) else m)
         (some_embedding (e m)) m =
        m"
-    unfolding dummy_untyped_var_def by auto
+    unfolding dummy_untyped_var_def mk_var_untyped_raw_def by auto
 qed
 
 fun semantics :: "'mem program \<Rightarrow> 'mem \<Rightarrow> 'mem" where
@@ -279,38 +361,21 @@ lemma commute_indep:
   assumes "independent_vars a b"
   shows "instructions_commute (Set a e) (Set b f)"
 proof -
-  consider (ab) "has_variables TYPE('mem) TYPE('a)" "has_variables TYPE('mem) TYPE('b)"
-    | (not_a) "\<not> has_variables TYPE('mem) TYPE('a)"
-    | (not_b) "\<not> has_variables TYPE('mem) TYPE('b)"
-    by auto
-  then have \<open>semantics [Set a e, Set b f] mem = semantics [Set b f, Set a e] mem\<close> for mem
-  proof cases
-    case ab
+  have \<open>semantics [Set a e, Set b f] mem = semantics [Set b f, Set a e] mem\<close> for mem
+  proof -
     have "f (update_var a (e mem) mem) = f mem"
       by (rule assms(1)[unfolded independent_of_def, rule_format, symmetric])
     then have 1: "semantics [Set a e, Set b f] mem
        = update_var b (f mem) (update_var a (e mem) mem)"
-      by (simp add: ab)
+      by (simp add: )
     have "e (update_var b (f mem) mem) = e mem"
       by (rule assms(2)[unfolded independent_of_def, rule_format, symmetric])
     then have 2: "semantics [Set b f, Set a e] mem
        = update_var a (e mem) (update_var b (f mem) mem)"
-      by (simp add: ab)
+      by (simp add: )
     show "semantics [Set a e, Set b f] mem = semantics [Set b f, Set a e] mem"
       unfolding 1 2
       using assms(3) unfolding independent_vars_def by simp
-  next
-    case not_a
-    then have [simp]: "semantics1 (Set a e) m = m" for m
-      by (rule semantics1_Set_invalid)
-    then show \<open>semantics [Set a e, Set b f] mem = semantics [Set b f, Set a e] mem\<close>
-      by simp
-  next
-    case not_b
-    then have [simp]: "semantics1 (Set b f) m = m" for m
-      by (rule semantics1_Set_invalid)
-    then show \<open>semantics [Set a e, Set b f] mem = semantics [Set b f, Set a e] mem\<close>
-      by simp
   qed
   then show ?thesis
     unfolding instructions_commute_def by auto
@@ -360,16 +425,43 @@ lemma independent_of_split[independence, intro]:
   shows "independent_of (\<lambda>m. (a m) (b m)) x"
   using assms unfolding independent_of_def by auto
 
+lemma update_var_current:
+  fixes x :: \<open>('mem,'x) var\<close>
+  shows "update_var x (eval_var x m) m = m"
+  apply (cases "has_variables TYPE('mem) TYPE('x)")
+   apply transfer
+  by (auto intro: update_var_invalid simp: bij_betw_imp_inj_on valid_var_def)
+
+lemma update_var_twice: 
+  fixes x :: \<open>('mem,'x) var\<close>
+  shows "update_var x a (update_var x b m) = update_var x a m"
+  apply (cases "has_variables TYPE('mem) TYPE('x)")
+   apply transfer
+   apply (auto simp: update_var_invalid valid_var_def)
+  by (metis UNIV_I bij_betw_apply bij_betw_inv_into_right mem_Sigma_iff old.prod.exhaust snd_conv)
+
 lemma independent_of_var[independence, intro]:
+  fixes x :: "('mem,'x) var" and y :: "('mem,'y) var"
   assumes "independent_vars x y"
   shows "independent_of (\<lambda>m. eval_var x m) y"
-  using assms 
   unfolding independent_of_def independent_vars_def
-  apply transfer
-  apply (thin_tac _)
-  apply (thin_tac _)
-  apply auto
-  sorry
+proof (rule+, cases "has_variables TYPE('mem) TYPE('x)")
+  case True
+  fix m a
+  have "eval_var x m = eval_var x (update_var x (eval_var x m) (update_var y a m))"
+    using True by (rule eval_update_var[symmetric])
+  also have "\<dots> = eval_var x (update_var y a (update_var x (eval_var x m) m))"
+    using assms unfolding independent_vars_def by simp
+  also have "\<dots> = eval_var x (update_var y a m)"
+    by (subst update_var_current, simp)
+  finally show "eval_var x m = eval_var x (update_var y a m)"
+    by -
+next
+  case False
+  fix m a
+  show "eval_var x m = eval_var x (update_var y a m)"
+    using eval_var_invalid[OF False] by simp
+qed
 
 lemma sort_program_empty_aux:
   "semantics [] = semantics []"
@@ -409,7 +501,6 @@ lemma join_hoare:
 lemma wp[hoare_wp add]: 
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
-  assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
   assumes imp: "\<And>m. A m \<Longrightarrow> B (update_var x (e m) m)"
   shows "\<And>m. invariant m \<longrightarrow> B m"
   using imp unfolding assms(1) postcondition_default_def by auto
@@ -420,7 +511,6 @@ lemma untouched[hoare_untouched add]:
   assumes indep: "independent_of B x"
   assumes imp: "\<And>m. A m \<Longrightarrow> B m"
   shows "\<And>m. invariant m \<longrightarrow> B m"
-  apply (cases "has_variables TYPE('mem) TYPE('val)")
   using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
   by (auto simp: semantics1_Set_invalid)
 
