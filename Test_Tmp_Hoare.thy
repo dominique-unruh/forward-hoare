@@ -5,8 +5,8 @@ begin
 record memory = mem_x :: int   mem_y :: "int \<Rightarrow> nat"   mem_z :: nat
 
 definition "x_raw (m::memory) = (mem_x m, m\<lparr>mem_x := 0\<rparr>)"
-lemma valid_x_raw: "valid_var x_raw UNIV"
-  unfolding valid_var_def x_raw_def
+lemma valid_x_raw: "valid_var (x_raw, UNIV)"
+  unfolding valid_var_def x_raw_def case_prod_conv
   apply (rule exI[of _ "{m\<lparr>mem_x := 0\<rparr> | m. True}"])
   apply (rule bij_betw_byWitness[where f'="\<lambda>(v,m). m\<lparr>mem_x := v\<rparr>"])
   by auto
@@ -18,22 +18,28 @@ lemma [simp]: "has_variables TYPE(memory) TYPE(int)"
   using valid_x_raw by auto  
 
 lemma [simp]: "eval_var x m = mem_x m"
-  apply transfer unfolding x_raw_def by auto
+  apply transfer using valid_x_raw unfolding x_raw_def by auto
 
 lemma [simp]: "inj x_raw"
-  using  valid_x_raw by (meson bij_betw_imp_inj_on valid_var_def)
+  using valid_x_raw
+  by (metis (no_types, lifting) Pair_inject iffs injI surjective update_convs(1) x_raw_def)
 
 lemma [simp]: "update_var x a m = m\<lparr>mem_x := a\<rparr>"
-  apply transfer 
+  apply transfer apply (simp add: valid_x_raw)
   apply (rule inv_f_eq)
    apply simp
   unfolding x_raw_def by simp
 
 
 
+
+
+
+
+
 definition "y_raw (m::memory) = (mem_y m, m\<lparr>mem_y := undefined\<rparr>)"
-lemma valid_y_raw: "valid_var y_raw UNIV"
-  unfolding valid_var_def y_raw_def
+lemma valid_y_raw: "valid_var (y_raw, UNIV)"
+  unfolding valid_var_def y_raw_def case_prod_conv
   apply (rule exI[of _ "{m\<lparr>mem_y := undefined\<rparr> | m. True}"])
   apply (rule bij_betw_byWitness[where f'="\<lambda>(v,m). m\<lparr>mem_y := v\<rparr>"])
   by auto
@@ -45,22 +51,25 @@ lemma [simp]: "has_variables TYPE(memory) TYPE(int\<Rightarrow>nat)"
   using valid_y_raw by auto  
 
 lemma [simp]: "eval_var y m = mem_y m"
-  apply transfer unfolding y_raw_def by auto
+  apply transfer using valid_y_raw unfolding y_raw_def by auto
 
 lemma [simp]: "inj y_raw"
-  using  valid_y_raw by (meson bij_betw_imp_inj_on valid_var_def)
+  using valid_y_raw
+  by (metis (no_types, lifting) Pair_inject iffs injI surjective update_convs(2) y_raw_def)
 
 lemma [simp]: "update_var y a m = m\<lparr>mem_y := a\<rparr>"
-  apply transfer 
+  apply transfer apply (simp add: valid_y_raw)
   apply (rule inv_f_eq)
    apply simp
   unfolding y_raw_def by simp
 
 
-definition "z_raw (m::memory) = (mem_z m, m\<lparr>mem_z := undefined\<rparr>)"
-lemma valid_z_raw: "valid_var z_raw UNIV"
-  unfolding valid_var_def z_raw_def
-  apply (rule exI[of _ "{m\<lparr>mem_z := undefined\<rparr> | m. True}"])
+
+
+definition "z_raw (m::memory) = (mem_z m, m\<lparr>mem_z := 0\<rparr>)"
+lemma valid_z_raw: "valid_var (z_raw, UNIV)"
+  unfolding valid_var_def z_raw_def case_prod_conv
+  apply (rule exI[of _ "{m\<lparr>mem_z := 0\<rparr> | m. True}"])
   apply (rule bij_betw_byWitness[where f'="\<lambda>(v,m). m\<lparr>mem_z := v\<rparr>"])
   by auto
 
@@ -71,14 +80,14 @@ lemma [simp]: "has_variables TYPE(memory) TYPE(nat)"
   using valid_z_raw by auto  
 
 lemma [simp]: "eval_var z m = mem_z m"
-  apply transfer unfolding z_raw_def by auto
-
+  apply transfer using valid_z_raw unfolding z_raw_def by auto
 
 lemma [simp]: "inj z_raw"
-  using  valid_z_raw by (meson bij_betw_imp_inj_on valid_var_def)
+  using valid_z_raw unfolding valid_var_def case_prod_conv
+  using bij_betw_imp_inj_on by blast 
 
 lemma [simp]: "update_var z a m = m\<lparr>mem_z := a\<rparr>"
-  apply transfer 
+  apply transfer apply (simp add: valid_z_raw)
   apply (rule inv_f_eq)
    apply simp
   unfolding z_raw_def by simp
