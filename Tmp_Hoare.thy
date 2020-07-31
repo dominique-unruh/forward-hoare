@@ -1,6 +1,10 @@
 theory Tmp_Hoare
-  imports Main Forward_Hoare 
+  imports Main 
+  CryptHOL.CryptHOL
+  Forward_Hoare
 begin
+
+no_notation m_inv ("inv\<index> _" [81] 80)
 
 section \<open>Programs\<close>
 
@@ -245,7 +249,7 @@ proof (cases "has_variables TYPE('mem) TYPE('val)")
       apply (auto)
       apply (subst bij_betw_inv_into_right[where f=x])
       using bij_x apply auto
-      using bij_betw_apply mem_Times_iff by fastforce
+      by (metis UNIV_I bij_betw_apply mem_Times_iff)
     then have "inv (map_prod i id \<circ> x) (i a, snd (x m)) = inv x (a, snd (x m))"
       apply (rule inv_f_eq[rotated])
       using \<open>inj x\<close> by (metis i_def inj_compose inv_id prod.inj_map some_embedding_inj surj_id surj_imp_inj_inv valid valid_var_less_eq_card)
@@ -268,8 +272,7 @@ next
         (x, S) \<Rightarrow> \<lambda>a m. if valid_var (x, S) then inv x (force_into a S, snd (x m)) else m)
         (some_embedding a) m =
        (if valid_var (x, UNIV) then inv x (a, snd (x m)) else m)\<close>
-      using valid_untyped apply (simp add: invalid case_prod_beta mk_var_untyped_raw_def dummy_untyped_var_def)
-      by (meson f_inv_into_f prod.inject rangeI)
+      using valid_untyped by (simp add: invalid case_prod_beta mk_var_untyped_raw_def dummy_untyped_var_def)
   qed
 qed
 
@@ -285,57 +288,57 @@ proof (transfer, simp add: assms)
   show "fst (x (inv x (a, snd (x m)))) = a"
     apply (subst bij_betw_inv_into_right[where f=x])
     using bij apply auto
-    using bij_betw_apply mem_Times_iff by fastforce 
+    by (metis UNIV_I bij_betw_apply mem_Times_iff)
 qed
 
 section \<open>Semantics\<close>
 
-fun semantics1 :: "'mem instruction \<Rightarrow> 'mem \<Rightarrow> 'mem" where
-  "semantics1 (SetRaw x e) m = update_untyped_var x (e m) m"
+fun semantics1 :: "'mem instruction \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
+  "semantics1 (SetRaw x e) m = return_spmf (update_untyped_var x (e m) m)"
 
 lemma semantics1_Set[simp]:
   fixes x :: "('mem,'val) var" and a :: 'val
-  shows "semantics1 (Set x e) m = update_var x (e m) m"
+  shows "semantics1 (Set x e) m = return_spmf (update_var x (e m) m)"
   unfolding Set_def apply simp
   by (rule update_untyped_var)
 
 lemma semantics1_Set_invalid:
   fixes x :: "('mem,'val) var" and a :: 'val
   assumes "\<not> has_variables TYPE('mem) TYPE('val)"
-  shows "semantics1 (Set x e) m = m"
+  shows "semantics1 (Set x e) m = return_spmf m"
 proof (simp add: Set_def, transfer)
   fix x :: "'mem \<Rightarrow> 'val \<times> 'mem" and e :: "'mem\<Rightarrow>'val" and m :: 'mem
   from assms have invalid: "\<not> valid_var (x, UNIV)"
     unfolding has_variables_def by auto
   have \<open>inv (Pair (some_embedding ())) (force_into (some_embedding (e m)) {some_embedding ()}, m) = m\<close>
     using [[show_types, show_consts]]
-    apply auto
-    by (meson Pair_inject f_inv_into_f rangeI)
+    by auto
   with invalid show "(case mk_var_untyped_raw x of
         (x, S) \<Rightarrow> \<lambda>a m. if valid_var (x, S) then inv x (force_into a S, snd (x m)) else m)
-        (some_embedding (e m)) m =
-       m"
+        (some_embedding (e m)) m = m"
     unfolding dummy_untyped_var_def mk_var_untyped_raw_def by auto
 qed
 
-fun semantics :: "'mem program \<Rightarrow> 'mem \<Rightarrow> 'mem" where
-  "semantics [] m = m"
-| "semantics (c#p) m = semantics p (semantics1 c m)"
+fun semantics :: "'mem program \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
+  "semantics [] m = return_spmf m"
+| "semantics (c#p) m = bind_spmf (semantics1 c m) (semantics p)"
 
 type_synonym 'mem "invariant" = "'mem \<Rightarrow> bool"
 
 definition "hoare" :: "'mem invariant \<Rightarrow> 'mem program \<Rightarrow> 'mem invariant \<Rightarrow> bool" where
-  "hoare A p B \<longleftrightarrow> (\<forall>m. A m \<longrightarrow> B (semantics p m))"
+  "hoare A p B \<longleftrightarrow> (\<forall>m. A m \<longrightarrow> pred_spmf B (semantics p m))"
 
 section \<open>Support for reasoning\<close>
 
+typ "_ pmf"
+
 definition postcondition_default :: "'mem program \<Rightarrow> 'mem invariant \<Rightarrow> 'mem invariant" where
-  "postcondition_default p I m \<longleftrightarrow> (\<exists>m'. I m' \<and> m = semantics p m')"
+  "postcondition_default p I m \<longleftrightarrow> (\<exists>m'. I m' \<and> m \<in> set_spmf (semantics p m'))"
 
 lemma postcondition_default_valid:
   "hoare A p (postcondition_default p A)"
   unfolding postcondition_default_def hoare_def
-  by auto
+  using pred_spmf_def by blast
 
 definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
 
@@ -366,12 +369,12 @@ proof -
     have "f (update_var a (e mem) mem) = f mem"
       by (rule assms(1)[unfolded independent_of_def, rule_format, symmetric])
     then have 1: "semantics [Set a e, Set b f] mem
-       = update_var b (f mem) (update_var a (e mem) mem)"
-      by (simp add: )
+       = return_spmf (update_var b (f mem) (update_var a (e mem) mem))"
+      by simp
     have "e (update_var b (f mem) mem) = e mem"
       by (rule assms(2)[unfolded independent_of_def, rule_format, symmetric])
     then have 2: "semantics [Set b f, Set a e] mem
-       = update_var a (e mem) (update_var b (f mem) mem)"
+       = return_spmf (update_var a (e mem) (update_var b (f mem) mem))"
       by (simp add: )
     show "semantics [Set a e, Set b f] mem = semantics [Set b f, Set a e] mem"
       unfolding 1 2
@@ -390,19 +393,23 @@ lemma insert_into_ordered_prepend_aux:
   by simp
 
 lemma insert_into_ordered_aux:
+  fixes a b :: "'mem instruction"
   assumes "instructions_commute a b"
   assumes "semantics (a#c) = semantics ac"
   shows "semantics (a#b#c) = semantics (b#ac)"
 proof -
-  have "semantics (a#b#c) = semantics c o (semantics1 b o semantics1 a)"
+  define seq where "seq x y m = x m \<bind> y" for x y :: "'mem\<Rightarrow>'mem spmf" and m
+  note [simp] = seq_def[abs_def] semantics.simps[abs_def]
+  write seq (infixl ";;" 70)
+  have "semantics (a#b#c) = (semantics1 a;; semantics1 b);; semantics c"
+    by simp
+  also have "semantics1 a;; semantics1 b = semantics1 b;; semantics1 a"
+    using assms(1) by (simp add: instructions_commute_def)
+  also have "(semantics1 b;; semantics1 a);; semantics c = semantics1 b;; (semantics1 a;; semantics c)"
     by auto
-  also have "semantics1 b o semantics1 a = semantics1 a o semantics1 b"
-    using assms(1) by (simp add: semantics.simps[abs_def] o_def instructions_commute_def)
-  also have "semantics c \<circ> (semantics1 a \<circ> semantics1 b) = (semantics c \<circ> semantics1 a) \<circ> semantics1 b"
-    by auto
-  also have "semantics c \<circ> semantics1 a = semantics ac"
-    using assms(2) by (simp add: semantics.simps[abs_def] o_def)
-  also have "semantics ac \<circ> semantics1 b = semantics (b#ac)"
+  also have "semantics1 a;; semantics c = semantics ac"
+    using assms(2) by simp
+  also have "semantics1 b;; semantics ac = semantics (b#ac)"
     by auto
   finally show ?thesis
     by -
@@ -428,17 +435,32 @@ lemma independent_of_split[independence, intro]:
 lemma update_var_current:
   fixes x :: \<open>('mem,'x) var\<close>
   shows "update_var x (eval_var x m) m = m"
-  apply (cases "has_variables TYPE('mem) TYPE('x)")
-   apply transfer
-  by (auto intro: update_var_invalid simp: bij_betw_imp_inj_on valid_var_def)
+proof (cases "has_variables TYPE('mem) TYPE('x)")
+  case True
+  show ?thesis
+    apply transfer
+    using True
+    by (auto simp: bij_betw_imp_inj_on valid_var_def)
+next
+  case False
+  then show ?thesis
+    by (auto intro: update_var_invalid)
+qed
 
 lemma update_var_twice: 
   fixes x :: \<open>('mem,'x) var\<close>
   shows "update_var x a (update_var x b m) = update_var x a m"
-  apply (cases "has_variables TYPE('mem) TYPE('x)")
-   apply transfer
-   apply (auto simp: update_var_invalid valid_var_def)
-  by (metis UNIV_I bij_betw_apply bij_betw_inv_into_right mem_Sigma_iff old.prod.exhaust snd_conv)
+proof (cases "has_variables TYPE('mem) TYPE('x)")
+  case True
+  show ?thesis
+    apply transfer
+    using True apply (auto simp: valid_var_def)
+    by (metis SigmaD2 SigmaI UNIV_I bij_betw_imp_surj_on f_inv_into_f prod.collapse rangeI snd_conv)
+next
+  case False
+  then show ?thesis
+    by (auto simp: update_var_invalid valid_var_def)
+qed
 
 lemma independent_of_var[independence, intro]:
   fixes x :: "('mem,'x) var" and y :: "('mem,'y) var"
@@ -474,15 +496,17 @@ lemma sort_program_aux:
   using assms by (simp add: semantics.simps[abs_def] o_def)
 
 lemma semantics_seq:
-  "semantics (p@q) = semantics q o semantics p"
+  "semantics (p@q) = (\<lambda>m. semantics p m \<bind> semantics q)"
   apply (rule ext, rename_tac m)
-  by (induction p; simp)
+  apply (induction p; simp)
+  by presburger
 
 lemma hoare_seq:
   assumes "hoare A p B"
   assumes "hoare B q C"
   shows "hoare A (p@q) C"
-  using assms unfolding hoare_def semantics_seq by auto
+  using assms unfolding hoare_def semantics_seq
+  using spmf_pred_mono_strong by force
 
 lemma append_conv0: "[] @ z \<equiv> z"
   by simp
@@ -528,6 +552,7 @@ subsection \<open>Concrete syntax for programs\<close>
 
 syntax "_expression" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
 syntax "_invariant" :: "'a \<Rightarrow> 'a" ("INV[_]")
+hide_type (open) id
 syntax "_variable" :: "id \<Rightarrow> 'a" ("$_")
 
 
