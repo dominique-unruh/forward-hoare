@@ -2,7 +2,7 @@ theory Test_Reorder_Hoare
   imports Reorder_Hoare
 begin
 
-Hoare program (reorder_hoare) prog: \<open>PROG[x:=1; y:=1; z:=1]\<close>
+Hoare program (reorder_hoare) prog1: \<open>PROG[x:=1; y:=1; z:=1]\<close>
 
 Hoare invariant (reorder_hoare) start: "\<lambda>m. True"
 

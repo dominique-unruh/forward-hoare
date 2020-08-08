@@ -107,7 +107,7 @@ lemma [simp]:
 
 Hoare config (tmp_hoare) memory = memory
 
-Hoare program (tmp_hoare) prog: \<open>PROG[x:=1; y:=nat; z:=7]\<close>
+Hoare program (tmp_hoare) prog2: \<open>PROG[x:=1; y:=nat; z:=7]\<close>
 
 lemma True
 proof

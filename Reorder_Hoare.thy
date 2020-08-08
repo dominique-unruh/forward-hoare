@@ -178,11 +178,11 @@ ML_file \<open>reorder_hoare.ML\<close>
 
 subsection \<open>Concrete syntax for programs\<close>
 
-syntax "_expression" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
-syntax "_variable" :: "id \<Rightarrow> 'a" ("$_")
+syntax "_expression_reorder_hoare" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
+syntax "_variable_reorder_hoare" :: "id \<Rightarrow> 'a" ("$_")
 
 parse_translation \<open>[
-  (\<^syntax_const>\<open>_expression\<close>, fn ctxt => fn [e] =>
+  (\<^syntax_const>\<open>_expression_reorder_hoare\<close>, fn ctxt => fn [e] =>
   let
 (*   fun vars (Free(n,_)) vs = vs
     | vars (Bound i) vs = vs
@@ -191,10 +191,10 @@ parse_translation \<open>[
     | vars (Var _) vs = vs
     | vars (t1$t2) vs = vars t2 (vars t1 vs) *)
   (* val [mem] = Name.variant_list (vars e []) ["mem"] *)
-  fun replace i (Const(\<^syntax_const>\<open>_variable\<close>,_) $ Free(n,_)) =
+  fun replace i (Const(\<^syntax_const>\<open>_variable_reorder_hoare\<close>,_) $ Free(n,_)) =
         (* Free(mem,dummyT) $ HOLogic.mk_literal n *)
         Bound i $ HOLogic.mk_literal n
-    | replace i (Const(\<^syntax_const>\<open>_variable\<close>,_) $ _) = error "$ must precede an identifier"
+    | replace i (Const(\<^syntax_const>\<open>_variable_reorder_hoare\<close>,_) $ _) = error "$ must precede an identifier"
     | replace i (t1$t2) = replace i t1 $ replace i t2
     | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
     | replace i t = t
@@ -207,15 +207,15 @@ parse_translation \<open>[
   end)
 ]\<close>
 
-nonterminal instruction_syntax
-syntax "_instruction_set" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax" ("_ := _")
-syntax "_instruction" :: "instruction_syntax \<Rightarrow> 'a" ("INSTR[_]")
-syntax "_string_of_identifier" :: "id \<Rightarrow> 'a"
+nonterminal instruction_syntax_reorder_hoare
+syntax "_instruction_set_reorder_hoare" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_reorder_hoare" ("_ := _")
+syntax "_instruction_reorder_hoare" :: "instruction_syntax_reorder_hoare \<Rightarrow> 'a" ("INSTR[_]")
+syntax "_string_of_identifier_reorder_hoare" :: "id \<Rightarrow> 'a"
 
-translations "_instruction (_instruction_set x e)" \<rightharpoonup> "CONST Set (_string_of_identifier x) (_expression e)"
+translations "_instruction_reorder_hoare (_instruction_set_reorder_hoare x e)" \<rightharpoonup> "CONST Set (_string_of_identifier_reorder_hoare x) (_expression_reorder_hoare e)"
 
 parse_translation \<open>[
-("_string_of_identifier", fn ctxt => fn [Free(n,_)] => HOLogic.mk_literal n)]\<close>
+(\<^syntax_const>\<open>_string_of_identifier_reorder_hoare\<close>, fn ctxt => fn [Free(n,_)] => HOLogic.mk_literal n)]\<close>
 
 ML \<open>
 fun dest_bit_syntax (Const(\<^const_syntax>\<open>False\<close>,_)) = 0
@@ -237,20 +237,20 @@ val dest_literal_syntax =
 
 print_translation \<open>[
 (\<^const_syntax>\<open>Set\<close>, fn ctxt => fn [str,n] =>
-  Const(\<^syntax_const>\<open>_instruction\<close>,dummyT) $
-    (Const(\<^syntax_const>\<open>_instruction_set\<close>,dummyT) $ Free(dest_literal_syntax str,dummyT) $ n)
+  Const(\<^syntax_const>\<open>_instruction_reorder_hoare\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_set_reorder_hoare\<close>,dummyT) $ Free(dest_literal_syntax str,dummyT) $ n)
   handle TERM("dest_literal_syntax",_) => raise Match)
 ]\<close>
 
 term \<open>INSTR[x := $x+$y]\<close>
 
-nonterminal "program_syntax"
-syntax "_program_cons" :: "instruction_syntax \<Rightarrow> program_syntax \<Rightarrow> program_syntax" ("_; _")
-syntax "_program_single" :: "instruction_syntax \<Rightarrow> program_syntax" ("_")
-syntax "_program" :: "program_syntax \<Rightarrow> 'a" ("PROG[_]")
+nonterminal "program_syntax_reorder_hoare"
+syntax "_program_cons_reorder_hoare" :: "instruction_syntax_reorder_hoare \<Rightarrow> program_syntax_reorder_hoare \<Rightarrow> program_syntax_reorder_hoare" ("_; _")
+syntax "_program_single_reorder_hoare" :: "instruction_syntax_reorder_hoare \<Rightarrow> program_syntax_reorder_hoare" ("_")
+syntax "_program_reorder_hoare" :: "program_syntax_reorder_hoare \<Rightarrow> 'a" ("PROG[_]")
 
-translations "_program (_program_cons i is)" \<rightleftharpoons> "_instruction i # _program is"
-translations "_program (_program_single i)" \<rightleftharpoons> "[_instruction i]"
+translations "_program_reorder_hoare (_program_cons_reorder_hoare i is)" \<rightleftharpoons> "_instruction_reorder_hoare i # _program_reorder_hoare is"
+translations "_program_reorder_hoare (_program_single_reorder_hoare i)" \<rightleftharpoons> "[_instruction_reorder_hoare i]"
 
 term \<open>PROG[x := 0; x := $x+1]\<close>
 
