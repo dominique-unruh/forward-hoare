@@ -103,12 +103,9 @@ fun get_the_logic thy name = get_logic thy name |> the' (fn () => "Unknown hoare
 fun get_logic' ctxt = get_logic (Proof_Context.theory_of ctxt)
 fun get_the_logic' ctxt = get_the_logic (Proof_Context.theory_of ctxt)
 
-
-fun logic_name {binding, ...} = Binding.name_of binding
-
 fun get_the_postcondition_generator logic make_post =
  Symtab.lookup (#postcondition_generators logic) make_post 
- |> the' (fn _ => "Unknown postcondition generator " ^ make_post ^ " in logic " ^ logic_name logic)
+ |> the' (fn _ => "Unknown postcondition generator " ^ make_post ^ " in logic " ^ name_of_logic logic)
 
 type var = string
 type program = { serial: serial, binding: binding, code: term, logic: string }
@@ -155,15 +152,15 @@ structure Hoare_Data = Generic_Data (
              hoares: hoare Symtab.table,
              programs: program Symtab.table,
              current_logic: logic option,
-             options: ex_options option
+             options: ex_options Symtab.table
   }
   val empty = { invariants=Symtab.empty, hoares=Symtab.empty,
-    programs=Symtab.empty, current_logic=NONE, options=NONE }
+    programs=Symtab.empty, current_logic=NONE, options=Symtab.empty }
   fun merge (d1,d2) =
     { invariants = Symtab.merge invariant_eq (#invariants d1, #invariants d2),
       hoares = Symtab.merge hoare_eq (#hoares d1, #hoares d2),
       programs = Symtab.merge program_eq (#programs d1, #programs d2),
-      current_logic = NONE, options = NONE }
+      current_logic = NONE, options = Symtab.empty }
   fun extend {invariants,hoares,programs,current_logic=_,options} =
     {invariants=invariants, hoares=hoares, programs=programs, current_logic=NONE, options=options}
 )
@@ -191,12 +188,14 @@ fun get_current_logic ctxt = Hoare_Data.get ctxt |> #current_logic
 fun get_the_current_logic ctxt = get_current_logic ctxt |> the' (fn _ => "No current logic")
 
 structure Hoare_Proof_Data = Proof_Data (
+  (* current_invariant is local to a proof obligation created by a hoare' command *)
   type T = { current_invariant: invariant option }
   fun init _ = { current_invariant=NONE }
 )
 
 
-fun get_options logic context = case Hoare_Data.get context |> #options of 
+fun get_options logic context = 
+  case Symtab.lookup (Hoare_Data.get context |> #options) (name_of_logic logic) of 
     SOME options => options
   | NONE => #default_options logic
 
@@ -204,7 +203,7 @@ fun set_option (logic:logic) name content m context = let
   val ctxt = Context.proof_of context
   val options = get_options logic context
   val options = #set_option logic name content ctxt m options
-  val context = map_options (fn _ => SOME options) context
+  val context = map_options (Symtab.update (name_of_logic logic, options)) context
   in context end
 
 
