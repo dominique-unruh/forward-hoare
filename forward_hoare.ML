@@ -22,7 +22,7 @@ val lthy_toolkit : local_theory toolkit = let
       | after_qed' _ _ = raise Match
     in Proof.theorem NONE after_qed' [[(prop, [])]] lthy end
   fun note bind thm lthy = Local_Theory.note ((bind,[]),[thm]) lthy |> snd
-  fun qed state = error "nyi 1"
+  val qed = Proof.global_done_proof
   in { define=define, declaration=declaration, context=context, theorem=theorem, note=note, qed=qed } end
 
 val proof_toolkit : Proof.state toolkit = let
@@ -488,20 +488,21 @@ fun declare_program_parser toolkit = (logic_parser -- name_parser -- content_par
 val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
 val name_parser = Parse.binding --| Parse.$$$ ":"
 val content_parser = Parse.group (fn _ => "invariant") (Parse.inner_syntax Parse.embedded)
-val declare_invariant_parser = logic_parser -- name_parser -- content_parser
+
+fun declare_invariant_parser toolkit = logic_parser -- name_parser -- content_parser
+ >> (fn ((logic,name),content) => define_invariant_command toolkit logic name content)
 
 fun config_parser toolkit = (logic_parser -- Parse.name --| Parse.$$$ "=" -- content_parser)
   >> (fn ((logic,name),content) => set_option_command toolkit logic name content)
 
-local
-in
-val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant\<close> "Declare an invariant"
+
+
+(* val _ = Outer_Syntax.command \<^command_keyword>\<open>invariant\<close> "Declare an invariant"
     (declare_invariant_parser >> (fn ((logic,name),content) => Toplevel.proof 
         (define_invariant_command proof_toolkit logic name content)))
 val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>invariant'\<close> "Declare an invariant"
     (declare_invariant_parser >> (fn ((logic,name),content) => 
-        (define_invariant_command lthy_toolkit logic name content)))
-end
+        (define_invariant_command lthy_toolkit logic name content))) *)
 
   val name_parser = Parse.binding --| Parse.$$$ ":"
   (* TODO: parse program name *)
@@ -536,12 +537,14 @@ fun command_parser_no_proof toolkit =
   (Args.$$$ "program" |-- declare_program_parser toolkit) ||
   (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit >> no_proof_obligation toolkit) ||
   (Args.$$$ "config" |-- config_parser toolkit) ||
+  (Args.$$$ "invariant" |-- declare_invariant_parser toolkit) ||
   (hoare_triple_parser toolkit >> no_proof_obligation toolkit)
 
 fun command_parser_proof toolkit = 
   (Args.$$$ "program" |-- declare_program_parser toolkit >> dummy_proof_obligation toolkit) ||
   (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit) ||
   (Args.$$$ "config" |-- config_parser toolkit >> dummy_proof_obligation toolkit) ||
+  (Args.$$$ "invariant" |-- declare_invariant_parser toolkit >> dummy_proof_obligation toolkit) ||
   (hoare_triple_parser toolkit)
 
 val _ = Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "Run a Hoare logic command (without proof obligation)"

@@ -112,7 +112,7 @@ Hoare program (tmp_hoare) prog: \<open>PROG[x:=1; y:=nat; z:=7]\<close>
 lemma True
 proof
 
-  invariant (tmp_hoare) start: "\<lambda>m. True"
+  hoare invariant (tmp_hoare) start: "\<lambda>m. True"
 
   hoare step1: range 1 pre start post step1 = default
 

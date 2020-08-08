@@ -1,15 +1,12 @@
 theory Forward_Hoare
   imports Pure
   keywords
-        "invariant" :: prf_decl % "proof"
-    and "invariant'" :: thy_decl
-
-    and "hoare" :: prf_decl % "proof"
+        "hoare" :: prf_decl % "proof"
     and "hoare'" :: prf_goal % "proof"
     and "Hoare" :: thy_decl
     and "Hoare'" :: thy_goal
 
-    and "range" "pre" "post" "extends" "program" "invariant_has" "config"
+    and "range" "pre" "post" "extends" "program" "invariant_has" "config" "invariant"
 begin
 
 named_theorems hoare_untouched

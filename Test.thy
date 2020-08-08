@@ -15,7 +15,7 @@ lemma "hoare (\<lambda>m. True) prog (\<lambda>m. m STR ''x'' = 0)"
   (is "hoare ?pre _ ?post")
 proof  -
 
-  invariant (demo_logic) start: ?pre
+  hoare invariant (demo_logic) start: ?pre
 
   (* Step 1: Set x 5 *)
 
