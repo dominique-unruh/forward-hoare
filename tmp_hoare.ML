@@ -3,13 +3,16 @@ struct
 
 (* TODO changes in concepts:
 
-   Declare everything outside lemma, too (at least invariant command is needed)
+   Uniform syntax for selecting logic (right after "hoare" keyword)
 
    Options can be given locally (e.g., when defining a program)?
 
  *)
 
 open Forward_Hoare
+
+fun is_prod (Type(\<^type_name>\<open>prod\<close>,_)) = true
+  | is_prod _ = false
 
 fun dest_listT (Type(\<^type_name>\<open>list\<close>, [T])) = T
   | dest_listT T = raise TYPE("dest_listT", [T], [])
@@ -22,9 +25,13 @@ fun programT T = instructionT T |> HOLogic.listT
 fun program2T T1 T2 = HOLogic.mk_prodT (programT T1, programT T2)
 fun dest_programT T = dest_listT T |> dest_instructionT
 fun invariantT T = T --> HOLogic.boolT
-fun invariant2T T1 T2 = HOLogic.mk_prodT (T1,T2) --> HOLogic.boolT
-fun dest_invariantT (Type(\<^type_name>\<open>fun\<close>, [T, \<^typ>\<open>bool\<close>])) = T
-  | dest_invariantT T = raise TYPE("dest_invariantT", [T], [])
+fun invariant2T T1 T2 = T1 --> T2 --> HOLogic.boolT
+fun is_rinvT (Type(\<^type_name>\<open>fun\<close>, [_, (Type(\<^type_name>\<open>fun\<close>, [_, \<^typ>\<open>bool\<close>]))])) = true
+  | is_rinvT _ = false
+fun dest_invariantT _ (Type(\<^type_name>\<open>fun\<close>, [T, \<^typ>\<open>bool\<close>])) = T
+  | dest_invariantT caller T = raise TYPE(caller^": dest_invariantT", [T], [])
+fun dest_invariant2T _ (Type(\<^type_name>\<open>fun\<close>, [T, (Type(\<^type_name>\<open>fun\<close>, [T', \<^typ>\<open>bool\<close>]))])) = (T,T')
+  | dest_invariant2T caller T = raise TYPE(caller^": dest_invariant2T", [T], [])
 
 fun varT T T' = Type(\<^type_name>\<open>var\<close>, [T,T'])
 
@@ -121,23 +128,42 @@ structure Logic1 = Hoare_Logic(
   structure Utils = Forward_Hoare_Utils(val logic_name = Binding.name_of binding)
   open Utils
 
-  type options = {memory_type: typ option, util_options: Utils.options}
-  val default_options = {memory_type = NONE, util_options = Utils.default_options}
-  fun set_memory_type T ({util_options,...}:options) : options = {memory_type = SOME T, util_options=util_options}
-  fun map_util_options f ({util_options, memory_type}:options) : options = {util_options = f util_options, memory_type = memory_type}
+  type options = {memory_type: typ option, 
+                  util_options: Utils.options,
+                  left_program: string option,
+                  right_program: string option}
+  val default_options = {memory_type = NONE, util_options = Utils.default_options,
+    left_program = NONE, right_program = NONE}
+  fun set_memory_type T ({util_options,left_program,right_program,...}:options) : options = {memory_type = SOME T, util_options=util_options, left_program=left_program, right_program=right_program}
+  fun set_left_program name ({util_options,memory_type,right_program,...}:options) : options = {memory_type = memory_type, util_options=util_options, left_program=SOME name, right_program=right_program}
+  fun set_right_program name ({util_options,memory_type,left_program,...}:options) : options = {memory_type = memory_type, util_options=util_options, right_program=SOME name, left_program=left_program}
+  fun map_util_options f ({util_options, memory_type,left_program,right_program}:options) : options = {util_options = f util_options, memory_type = memory_type, left_program=left_program, right_program=right_program}
   fun set_option "memory" typ_str ctxt m = let
         val T = Syntax.read_typ ctxt typ_str
         val T = Morphism.typ m T
         in set_memory_type T end
+    | set_option "left" name ctxt _ = let val name' = YXML.content_of name in
+        get_my_program ctxt name'; set_left_program name' end
+    | set_option "right" name ctxt _ = let val name' = YXML.content_of name in
+        get_my_program ctxt name'; set_right_program name' end
     | set_option name content ctxt m = map_util_options (Utils.set_option name content ctxt m)
 
-  type range = string * int list
+  fun the_left_program options = options |> #left_program |> the' (fn _ => "No left program configured. Use 'hoare (tmp_logic) config left = name'")
+  fun the_right_program options = options |> #right_program |> the' (fn _ => "No right program configured. Use 'hoare (tmp_logic) config left = name'")
+
+  datatype range = Range of string * int list | Range2 of string * int list * string * int list
+
   fun program_term_typ options = 
     programT (#memory_type options |> the' (fn _ => "Memory type not set. Use \"Hoare config memory = <typ>\"."))
   fun invariant_typ options = 
-    invariantT (#memory_type options |> the' (fn _ => "Memory type not set. Use \"Hoare config memory = <typ>\"."))
+    (#memory_type options |> the' (fn _ => "Memory type not set. Use \"Hoare config memory = <typ>\".")) --> dummyT
 
-  fun pretty_range _ (_,range) = Pretty.commas (range |> map (string_of_int #> Pretty.str)) |> Pretty.block
+  fun pretty_range _ (Range (_,range)) = Pretty.commas (range |> map (string_of_int #> Pretty.str)) |> Pretty.block
+    | pretty_range _ (Range2 (_,range1,_,range2)) = 
+        Pretty.block [
+          Pretty.commas (range1 |> map (string_of_int #> Pretty.str)) |> Pretty.block,
+          Pretty.str "~",
+          Pretty.commas (range2 |> map (string_of_int #> Pretty.str)) |> Pretty.block]
 
   fun check_program _ prog = (HOLogic.dest_list prog; ())
     handle TERM _ => error "Program must be a list of instructions"
@@ -147,28 +173,54 @@ structure Logic1 = Hoare_Logic(
     val invT = invariantT T
   in Const(\<^const_name>\<open>postcondition_default\<close>, progT --> invT --> invT) end
 
-  fun postcondition_default program_fragment pre = let
-    val T = dest_invariantT (fastype_of pre)
+  fun postcondition_default2_const T T' = let
+    val progT = program2T T T'
+    val invT = invariant2T T T'
+  in Const(\<^const_name>\<open>postcondition_default2\<close>, progT --> invT --> invT) end
+
+  fun postcondition_default1 program_fragment pre = let
+    val T = dest_invariantT "postcondition_default" (fastype_of pre)
     val post = postcondition_default_const T $ program_fragment $ pre
     fun tac ctxt = resolve_tac ctxt @{thms postcondition_default_valid} 1
     in
       (post, tac)
     end
 
+  fun postcondition_default2 program_fragment pre = let
+    val (T,T') = dest_invariant2T "postcondition_default2" (fastype_of pre)
+    val post = postcondition_default2_const T T' $ program_fragment $ pre
+    fun tac ctxt = resolve_tac ctxt @{thms postcondition_default2_valid} 1
+    in
+      (post, tac)
+    end
+
+  fun postcondition_default program_fragment pre = 
+    if is_prod (fastype_of program_fragment) then
+      postcondition_default2 program_fragment pre
+    else
+      postcondition_default1 program_fragment pre
+
   val postcondition_generators = Symtab.make [
     ("default", Scan.succeed postcondition_default |> Scan.lift)]
 
-  fun extract_range ctxt (progname,range) = let
-    val prog = get_my_program ctxt progname
-    val prog' = prog |> HOLogic.dest_list
-    val extr' = map (fn i => nth prog' (i-1)) range
-  in HOLogic.mk_list (fastype_of prog |> dest_listT) extr' end
+  fun extract_range ctxt (Range (progname,range)) = let
+        val prog = get_my_program ctxt progname
+        val prog' = prog |> HOLogic.dest_list
+        val extr' = map (fn i => nth prog' (i-1)) range
+      in HOLogic.mk_list (fastype_of prog |> dest_listT) extr' end
+    | extract_range ctxt (Range2 (p1,r1,p2,r2)) = let
+        val t1 = extract_range ctxt (Range (p1,r1))
+        val t2 = extract_range ctxt (Range (p2,r2))
+      in HOLogic.mk_prod (t1,t2) end
 
-  fun read_range options _ = 
-    Scan.lift (Parse.list1 Parse.nat)
-      >> (fn indices => (get_current_program_name (#util_options options), indices))
+  val tilde = Parse.sym_ident :-- (fn "~" => Scan.succeed () | _ => Scan.fail) >> #1;
 
-(* TODO rename to check_range and have unit return type *)
+  fun read_range (options:options) _ : range context_parser = 
+    Scan.lift (Parse.list1 Parse.nat -- Scan.option (tilde |-- Parse.list1 Parse.nat))
+      >> (fn (indices,NONE) => Range (get_current_program_name (#util_options options), indices)
+           | (indices1,SOME indices2) => Range2 (the_left_program options, indices1, the_right_program options, indices2))
+
+(* (* TODO rename to check_range and have unit return type *)
   fun valid_range prog range = let
     val len = length (prog |> HOLogic.dest_list)
     val _ = range |> List.app (fn i => if i <= 0 
@@ -179,7 +231,7 @@ structure Logic1 = Hoare_Logic(
             else ()) 
     val _ = if is_unique_sorted range then ()
             else error ("Range is not sorted")
-  in true end
+  in true end *)
 
   fun check_invariant _ _ = ()
 
@@ -188,13 +240,28 @@ structure Logic1 = Hoare_Logic(
     val progT = programT T
   in Const(\<^const_name>\<open>hoare\<close>, invT --> progT --> invT --> HOLogic.boolT) end
 
-  fun hoare_thm _ pre prog post = hoare_const (dest_invariantT (fastype_of pre)) $
-    pre $ prog $ post |> HOLogic.mk_Trueprop
+  fun rhoare_const T T' = let
+    val invT = invariant2T T T'
+    val progT = programT T
+    val progT' = programT T'
+  in Const(\<^const_name>\<open>rhoare\<close>, invT --> progT --> progT' --> invT --> HOLogic.boolT) end
 
-  fun join_hoare ctxt _ (prog12,range12) _ (prog23,range23) _ thm12 thm23 = let
+  fun hoare_thm _ pre prog post = 
+    if not (is_prod (fastype_of prog)) then
+      hoare_const (dest_invariantT "hoare_thm" (fastype_of pre)) $
+          pre $ prog $ post |> HOLogic.mk_Trueprop
+    else
+      let val (T1,T2) = dest_invariant2T "hoare_thm" (fastype_of pre)
+          val prog12T = HOLogic.mk_prodT (programT T1, programT T2)
+          val prog1 = Const(\<^const_name>\<open>fst\<close>, prog12T --> programT T1) $ prog
+          val prog2 = Const(\<^const_name>\<open>snd\<close>, prog12T --> programT T2) $ prog
+      in rhoare_const T1 T2 $ pre $ 
+        prog1 $ prog2 $ post |> HOLogic.mk_Trueprop end
+
+  fun join_hoare ctxt _ (Range (prog12,range12)) _ (Range (prog23,range23)) _ thm12 thm23 = let
     val _ = if prog12 <> prog23 then error ("Trying to join Hoare judgments from different programs " ^ prog12 ^ " and " ^ prog23) else ()
-    val p12 = extract_range ctxt (prog12,range12)
-    val p23 = extract_range ctxt (prog12,range23)
+    val p12 = extract_range ctxt (Range (prog12,range12))
+    val p23 = extract_range ctxt (Range (prog12,range23))
     (* hoare invariant1 (p12@p23) invariant3 *)
     val hoare_append = (@{thm hoare_seq} OF [thm12, thm23])
     val prog = get_my_program ctxt prog12
@@ -206,14 +273,28 @@ structure Logic1 = Hoare_Logic(
     val (range13,_,sorted_thm) = sort_program ctxt (range12@range23, p13)
     (* val _ = sorted_thm |> \<^print> *)
     val thm = @{thm join_hoare} OF [hoare_append, p13_thm, sorted_thm]
-  in ((prog12,range13),thm) end
+  in (Range (prog12,range13),thm) end
 
 
   fun invariant_implication _ inv1 inv2 = let
-    val memT = fastype_of inv1 |> dest_invariantT
-  in 
-     Logic.all_const memT $ Abs("mem",memT, 
-      HOLogic.mk_imp (inv1 $ Bound 0, inv2 $ Bound 0) |> HOLogic.mk_Trueprop)
+    val inv1T = fastype_of inv1
+    val inv2T = fastype_of inv2
+    val _ = if inv1T <> inv2T then raise (TYPE("Comparing invariants of different types", [inv1T,inv2T], [])) else ()
+  in case (is_rinvT inv1T, is_rinvT inv2T) of
+    (false,false) => let
+      val memT = inv1T |> dest_invariantT "invariant_implication"
+      in 
+         Logic.all_const memT $ Abs("mem",memT, 
+          HOLogic.mk_imp (inv1 $ Bound 0, inv2 $ Bound 0) |> HOLogic.mk_Trueprop)
+      end
+  | (true,true) => let
+      val (mem1T,mem2T) = dest_invariant2T "invariant_implication" inv1T
+      in
+         Logic.all_const mem1T $ Abs("mem1",mem1T, 
+           Logic.all_const mem2T $ Abs("mem2",mem2T,
+          HOLogic.mk_imp (inv1 $ Bound 1 $ Bound 0, inv2 $ Bound 1 $ Bound 0) |> HOLogic.mk_Trueprop))
+      end
+  | _ => error "Comparing a relational and a non-relational invariant"
   end
 )
 

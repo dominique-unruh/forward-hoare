@@ -182,6 +182,7 @@ fun get_invariant ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #invariants)
 fun get_the_invariant ctxt name = get_invariant ctxt name |> the' (fn _ => "Unknown invariant " ^ name)
 fun get_hoare ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #hoares) name
 fun get_the_hoare ctxt name = get_hoare ctxt name |> the' (fn _ => "Unknown Hoare judgment " ^ name)
+(* TODO check whether 'name' contains markup, if so, raise error. Same in all other getters *)
 fun get_program context name = Symtab.lookup (Hoare_Data.get context |> #programs) name
 fun get_the_program context name = get_program context name |> the' (fn _ => "Unknown program " ^ name)
 fun get_current_logic ctxt = Hoare_Data.get ctxt |> #current_logic

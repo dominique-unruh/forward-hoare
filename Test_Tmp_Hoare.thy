@@ -107,10 +107,32 @@ lemma [simp]:
 
 Hoare config (tmp_hoare) memory = memory
 
-Hoare program (tmp_hoare) prog2: \<open>PROG[x:=1; y:=nat; z:=7]\<close>
+Hoare program (tmp_hoare) left: \<open>PROG[x:=1; y:=nat; z:=$y ($x)]\<close>
+Hoare program (tmp_hoare) right: \<open>PROG[x:=2; y:=nat; z:=$y ($x) + 1]\<close>
+
+ML \<open>
+Forward_Hoare.Hoare_Data.get (Context.Proof \<^context>) |> #programs
+\<close>
+
+Hoare config (tmp_hoare) left = left
+Hoare config (tmp_hoare) right = right
+
+Hoare invariant (tmp_hoare) start2: "INV2[True] :: (memory, memory) rinvariant"
+
+Hoare step1: range 1~1 pre start2 post step1 = default
+
+Hoare' invariant_has step1x1: step1 \<rightarrow> "INV2[$x1=1] :: (memory,memory) rinvariant"
+  apply updated by auto
+
+Hoare' invariant_has step1x2: step1 \<rightarrow> "INV2[$x2=2] :: (memory,memory) rinvariant"
+  apply updated by auto
+
+Hoare' invariant_has step1x: step1 \<rightarrow> "INV2[$x1+1=$x2]"
+  using step1x1 step1x2 by auto
+
 
 lemma True
-proof
+proof -
 
   hoare invariant (tmp_hoare) start: "\<lambda>m. True"
 

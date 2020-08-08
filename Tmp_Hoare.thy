@@ -324,7 +324,7 @@ fun semantics :: "'mem program \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
 | "semantics (c#p) m = bind_spmf (semantics1 c m) (semantics p)"
 
 type_synonym 'mem "invariant" = "'mem \<Rightarrow> bool"
-type_synonym ('m1,'m2) "rinvariant" = "('m1 \<times> 'm2) invariant"
+type_synonym ('m1,'m2) "rinvariant" = "'m1 \<Rightarrow> 'm2 \<Rightarrow> bool"
 
 definition "hoare" :: "'mem invariant \<Rightarrow> 'mem program \<Rightarrow> 'mem invariant \<Rightarrow> bool" where
   "hoare A p B \<longleftrightarrow> (\<forall>m. A m \<longrightarrow> pred_spmf B (semantics p m))"
@@ -332,18 +332,27 @@ definition "hoare" :: "'mem invariant \<Rightarrow> 'mem program \<Rightarrow> '
 definition "is_coupling \<mu> \<mu>1 \<mu>2 \<longleftrightarrow> map_spmf fst \<mu> = \<mu>1 \<and> map_spmf snd \<mu> = \<mu>2"
 
 definition "rhoare" :: "('m1,'m2) rinvariant \<Rightarrow> 'm1 program \<Rightarrow> 'm2 program \<Rightarrow> ('m1,'m2) rinvariant \<Rightarrow> bool" where
-  "rhoare A p1 p2 B \<longleftrightarrow> (\<forall>m1 m2. A (m1,m2) \<longrightarrow> (\<exists>\<mu>.
-    is_coupling \<mu> (semantics p1 m1) (semantics p2 m2) \<and> pred_spmf B \<mu>))"
+  "rhoare A p1 p2 B \<longleftrightarrow> (\<forall>m1 m2. A m1 m2 \<longrightarrow> (\<exists>\<mu>.
+    is_coupling \<mu> (semantics p1 m1) (semantics p2 m2) \<and> pred_spmf (case_prod B) \<mu>))"
 
 section \<open>Support for reasoning\<close>
 
 definition postcondition_default :: "'mem program \<Rightarrow> 'mem invariant \<Rightarrow> 'mem invariant" where
   "postcondition_default p I m \<longleftrightarrow> (\<exists>m'. I m' \<and> m \<in> set_spmf (semantics p m'))"
 
+definition postcondition_default2 :: "'mem1 program * 'mem2 program \<Rightarrow> ('mem1,'mem2) rinvariant \<Rightarrow> ('mem1,'mem2) rinvariant" where
+  "postcondition_default2 = (\<lambda>(p1,p2) I m1 m2.
+      \<exists>m1' m2'. I m1' m2' \<and> m1 \<in> set_spmf (semantics p1 m1')
+                          \<and> m2 \<in> set_spmf (semantics p2 m2'))"
+
 lemma postcondition_default_valid:
   "hoare A p (postcondition_default p A)"
   unfolding postcondition_default_def hoare_def
   using pred_spmf_def by blast
+
+lemma postcondition_default2_valid:
+  "rhoare A (fst p) (snd p) (postcondition_default2 p A)"
+  sorry
 
 definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
 
@@ -551,15 +560,31 @@ lemma updated[hoare_updated add]:
   shows "\<And>m. invariant m \<longrightarrow> eval_var x m = e m"
   using assms unfolding assms postcondition_default_def independent_of_def by auto
 
+lemma updatedL[hoare_updated add]:
+  fixes x :: "('mem,'val) var"
+  assumes "invariant \<equiv> postcondition_default2 ([Set x e], p) A"
+  assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
+  assumes indep: "independent_of e x"
+  shows "\<And>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m1 = e m1"
+  using assms unfolding assms postcondition_default2_def independent_of_def by auto
+
+lemma updatedR[hoare_updated add]:
+  fixes x :: "('mem,'val) var"
+  assumes "invariant \<equiv> postcondition_default2 (p, [Set x e]) A"
+  assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
+  assumes indep: "independent_of e x"
+  shows "\<And>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m2 = e m2"
+  using assms unfolding assms postcondition_default2_def independent_of_def by auto
+
 ML_file \<open>tmp_hoare.ML\<close>
 
 subsection \<open>Concrete syntax for programs\<close>
 
 syntax "_expression_tmp_hoare" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
 syntax "_invariant_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV[_]")
+syntax "_invariant2_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV2[_]")
 hide_type (open) id
 syntax "_variable_tmp_hoare" :: "id \<Rightarrow> 'a" ("$_")
-
 
 parse_translation \<open>let 
 fun make_syntax_type (Type(name, Ts)) = Term.list_comb 
@@ -575,13 +600,36 @@ fun EXPR_like T ctxt [e] =   let
   val e' = replace 0 e
   val t = Abs("mem",dummyT,e')
   in
-    Const("_constrain", dummyT) $ t $ make_syntax_type (dummyT --> T)
+    Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> T)
   end
+
+fun EXPR2_like T ctxt [e] =   let
+  fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) = let
+        val len = String.size n
+        val last = String.sub (n, len-1)
+        val name = String.substring (n, 0, len-1)
+        (* val _ = \<^print> (last,name) *)
+        val lr = case last of #"1" => 1 | #"2" => 0 |
+                    _ => error ("Variable must be indexed. ($"^n^"1 or $"^n^"2 instead of $"^n^")")
+      in @{const eval_var(dummy,dummy)} $ Free(name, dummyT) $ Bound (i+lr) end
+    | replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
+    | replace i (t1$t2) = replace i t1 $ replace i t2
+    | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
+    | replace i t = t
+  val e' = replace 0 e
+  val t = Abs("mem1",dummyT,Abs("mem2",dummyT,e'))
+  in
+    Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> dummyT --> T)
+  end
+
 in
 [
   (\<^syntax_const>\<open>_expression_tmp_hoare\<close>, EXPR_like dummyT),
-  (\<^syntax_const>\<open>_invariant_tmp_hoare\<close>, EXPR_like HOLogic.boolT)
+  (\<^syntax_const>\<open>_invariant_tmp_hoare\<close>, EXPR_like HOLogic.boolT),
+  (\<^syntax_const>\<open>_invariant2_tmp_hoare\<close>, EXPR2_like HOLogic.boolT)
 ] end\<close>
+
+(* term "(INV2[$x1 = $x2], INV[$x = (1::nat)])" *)
 
 nonterminal instruction_syntax_tmp_hoare
 syntax "_instruction_set_tmp_hoare" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_tmp_hoare" ("_ := _")
