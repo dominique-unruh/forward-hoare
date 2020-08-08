@@ -84,16 +84,18 @@ fun sort_program _ ([],prog) = ([],prog,@{thm sort_program_empty_aux})
 
 structure Logic = Hoare_Logic(
   val binding = \<^binding>\<open>reorder_hoare\<close>
+  structure Utils = Forward_Hoare_Utils(val logic_name = Binding.name_of binding)
+  open Utils
 
-  type range = int list
+  type range = string * int list
   fun program_term_typ _ = \<^typ>\<open>program\<close>
   fun invariant_typ _ = \<^typ>\<open>invariant\<close>
 
-  type options = unit
+(*   type options = unit
   val default_options = ()
-  fun set_option _ _ _ _ _ = error "Logic reorder_hoare has no options"
+  fun set_option _ _ _ _ _ = error "Logic reorder_hoare has no options" *)
 
-  fun pretty_range _ range = Pretty.commas (range |> map (string_of_int #> Pretty.str)) |> Pretty.block
+  fun pretty_range _ (_,range) = Pretty.commas (range |> map (string_of_int #> Pretty.str)) |> Pretty.block
 
   fun check_program _ prog = (HOLogic.dest_list prog; ())
     handle TERM _ => error "Program must be a list of instructions"
@@ -108,14 +110,16 @@ structure Logic = Hoare_Logic(
   val postcondition_generators = Symtab.make [
     ("default", Scan.succeed postcondition_default |> Scan.lift)]
 
-  fun extract_range prog range = let
-    val prog' = prog |> HOLogic.dest_list
+  fun extract_range ctxt (prog,range) = let
+    val prog' = get_my_program ctxt prog |> HOLogic.dest_list
     val extr' = map (fn i => nth prog' (i-1)) range
   in HOLogic.mk_list \<^typ>\<open>instruction\<close> extr' end
 
-  fun read_range _ = Parse.list1 Parse.nat |> Scan.lift
+  fun read_range options _ = 
+    Scan.lift (Parse.list1 Parse.nat)
+      >> (fn indices => (get_current_program_name options, indices))
 
-(* TODO rename to check_range and have unit return type *)
+(* (* TODO rename to check_range and have unit return type *)
   fun valid_range prog range = let
     val len = length (prog |> HOLogic.dest_list)
     val _ = range |> List.app (fn i => if i <= 0 
@@ -126,15 +130,16 @@ structure Logic = Hoare_Logic(
             else ()) 
     val _ = if is_unique_sorted range then ()
             else error ("Range is not sorted")
-  in true end
+  in true end *)
 
   fun check_invariant _ _ = ()
 
   fun hoare_thm _ pre prog post = \<^const>\<open>hoare\<close> $ pre $ prog $ post |> HOLogic.mk_Trueprop
 
-  fun join_hoare ctxt program _ range12 _ range23 _ thm12 thm23 = let
-    val p12 = extract_range program range12
-    val p23 = extract_range program range23
+  fun join_hoare ctxt _ (prog12,range12) _ (prog23,range23) _ thm12 thm23 = let
+    val _ = if prog12 <> prog23 then error ("Trying to join Hoare judgments from different programs " ^ prog12 ^ " and " ^ prog23) else ()
+    val p12 = extract_range ctxt (prog12,range12)
+    val p23 = extract_range ctxt (prog12,range23)
     (* hoare invariant1 (p12@p23) invariant3 *)
     val hoare_append = (@{thm hoare_seq} OF [thm12, thm23])
     val p12_p23 = @{const append(instruction)} $ p12 $ p23
@@ -144,7 +149,7 @@ structure Logic = Hoare_Logic(
     val (range13,_,sorted_thm) = sort_program ctxt (range12@range23, p13)
     (* val _ = sorted_thm |> \<^print> *)
     val thm = @{thm join_hoare} OF [hoare_append, p13_thm, sorted_thm]
-  in (range13,thm) end
+  in ((prog12,range13),thm) end
 
 
   fun invariant_implication _ inv1 inv2 =

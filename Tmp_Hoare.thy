@@ -324,13 +324,18 @@ fun semantics :: "'mem program \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
 | "semantics (c#p) m = bind_spmf (semantics1 c m) (semantics p)"
 
 type_synonym 'mem "invariant" = "'mem \<Rightarrow> bool"
+type_synonym ('m1,'m2) "rinvariant" = "('m1 \<times> 'm2) invariant"
 
 definition "hoare" :: "'mem invariant \<Rightarrow> 'mem program \<Rightarrow> 'mem invariant \<Rightarrow> bool" where
   "hoare A p B \<longleftrightarrow> (\<forall>m. A m \<longrightarrow> pred_spmf B (semantics p m))"
 
-section \<open>Support for reasoning\<close>
+definition "is_coupling \<mu> \<mu>1 \<mu>2 \<longleftrightarrow> map_spmf fst \<mu> = \<mu>1 \<and> map_spmf snd \<mu> = \<mu>2"
 
-typ "_ pmf"
+definition "rhoare" :: "('m1,'m2) rinvariant \<Rightarrow> 'm1 program \<Rightarrow> 'm2 program \<Rightarrow> ('m1,'m2) rinvariant \<Rightarrow> bool" where
+  "rhoare A p1 p2 B \<longleftrightarrow> (\<forall>m1 m2. A (m1,m2) \<longrightarrow> (\<exists>\<mu>.
+    is_coupling \<mu> (semantics p1 m1) (semantics p2 m2) \<and> pred_spmf B \<mu>))"
+
+section \<open>Support for reasoning\<close>
 
 definition postcondition_default :: "'mem program \<Rightarrow> 'mem invariant \<Rightarrow> 'mem invariant" where
   "postcondition_default p I m \<longleftrightarrow> (\<exists>m'. I m' \<and> m \<in> set_spmf (semantics p m'))"
@@ -550,10 +555,10 @@ ML_file \<open>tmp_hoare.ML\<close>
 
 subsection \<open>Concrete syntax for programs\<close>
 
-syntax "_expression" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
-syntax "_invariant" :: "'a \<Rightarrow> 'a" ("INV[_]")
+syntax "_expression_tmp_hoare" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
+syntax "_invariant_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV[_]")
 hide_type (open) id
-syntax "_variable" :: "id \<Rightarrow> 'a" ("$_")
+syntax "_variable_tmp_hoare" :: "id \<Rightarrow> 'a" ("$_")
 
 
 parse_translation \<open>let 
@@ -561,9 +566,9 @@ fun make_syntax_type (Type(name, Ts)) = Term.list_comb
   (Const("\<^type>"^name, dummyT), map make_syntax_type Ts)
 
 fun EXPR_like T ctxt [e] =   let
-  fun replace i (Const(\<^syntax_const>\<open>_variable\<close>,_) $ Free(n,_)) =
+  fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) =
         @{const eval_var(dummy,dummy)} $ Free(n, dummyT) $ Bound i
-    | replace i (Const(\<^syntax_const>\<open>_variable\<close>,_) $ _) = error "$ must precede an identifier"
+    | replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
     | replace i (t1$t2) = replace i t1 $ replace i t2
     | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
     | replace i t = t
@@ -574,17 +579,17 @@ fun EXPR_like T ctxt [e] =   let
   end
 in
 [
-  (\<^syntax_const>\<open>_expression\<close>, EXPR_like dummyT),
-  (\<^syntax_const>\<open>_invariant\<close>, EXPR_like HOLogic.boolT)
+  (\<^syntax_const>\<open>_expression_tmp_hoare\<close>, EXPR_like dummyT),
+  (\<^syntax_const>\<open>_invariant_tmp_hoare\<close>, EXPR_like HOLogic.boolT)
 ] end\<close>
 
-nonterminal instruction_syntax
-syntax "_instruction_set" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax" ("_ := _")
-syntax "_instruction" :: "instruction_syntax \<Rightarrow> 'a" ("INSTR[_]")
+nonterminal instruction_syntax_tmp_hoare
+syntax "_instruction_set_tmp_hoare" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_tmp_hoare" ("_ := _")
+syntax "_instruction_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> 'a" ("INSTR[_]")
 (* syntax "_string_of_identifier" :: "id \<Rightarrow> 'a" *)
 
-translations "_instruction (_instruction_set x e)" 
-          \<rightharpoonup> "CONST Set x (_expression e)"
+translations "_instruction_tmp_hoare (_instruction_set_tmp_hoare x e)" 
+          \<rightharpoonup> "CONST Set x (_expression_tmp_hoare e)"
 
 (* parse_translation \<open>[
 ("_string_of_identifier", fn ctxt => fn [Free(n,_)] => HOLogic.mk_literal n)]\<close> *)
@@ -609,20 +614,20 @@ val dest_literal_syntax =
 
 print_translation \<open>[
 (\<^const_syntax>\<open>Set\<close>, fn ctxt => fn [x,n] =>
-  Const(\<^syntax_const>\<open>_instruction\<close>,dummyT) $
-    (Const(\<^syntax_const>\<open>_instruction_set\<close>,dummyT) $ x $ n)
+  Const(\<^syntax_const>\<open>_instruction_tmp_hoare\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_set_tmp_hoare\<close>,dummyT) $ x $ n)
   handle TERM("dest_literal_syntax",_) => raise Match)
 ]\<close>
 
 term \<open>INSTR[x := $x+$y]\<close>
 
-nonterminal "program_syntax"
-syntax "_program_cons" :: "instruction_syntax \<Rightarrow> program_syntax \<Rightarrow> program_syntax" ("_; _")
-syntax "_program_single" :: "instruction_syntax \<Rightarrow> program_syntax" ("_")
-syntax "_program" :: "program_syntax \<Rightarrow> 'a" ("PROG[_]")
+nonterminal "program_syntax_tmp_hoare"
+syntax "_program_cons_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> program_syntax_tmp_hoare \<Rightarrow> program_syntax_tmp_hoare" ("_; _")
+syntax "_program_single_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> program_syntax_tmp_hoare" ("_")
+syntax "_program_tmp_hoare" :: "program_syntax_tmp_hoare \<Rightarrow> 'a" ("PROG[_]")
 
-translations "_program (_program_cons i is)" \<rightleftharpoons> "_instruction i # _program is"
-translations "_program (_program_single i)" \<rightleftharpoons> "[_instruction i]"
+translations "_program_tmp_hoare (_program_cons_tmp_hoare i is)" \<rightleftharpoons> "_instruction_tmp_hoare i # _program_tmp_hoare is"
+translations "_program_tmp_hoare (_program_single_tmp_hoare i)" \<rightleftharpoons> "[_instruction_tmp_hoare i]"
 
 term \<open>PROG[x := 0; x := $x+1]\<close>
 

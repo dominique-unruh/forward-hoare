@@ -2,6 +2,7 @@ structure Demo_Hoare = struct
 
 open Forward_Hoare
 
+
 datatype instruction = Add of var*var | Set of var*int | Guess of var
   fun instruction_to_term (Set (x, i)) = \<^const>\<open>Set\<close> $ HOLogic.mk_literal x $ HOLogic.mk_number HOLogic.intT i
     | instruction_to_term (Guess x) = \<^const>\<open>Guess\<close> $ HOLogic.mk_literal x
@@ -17,14 +18,16 @@ datatype instruction = Add of var*var | Set of var*int | Guess of var
   fun term_to_program t = HOLogic.dest_list t |> map term_to_instruction
 
 structure Demo_Hoare_Logic = Hoare_Logic(
-  (* type program = instruction list *)
-  type range = int * int
-
-  type options = unit
-  val default_options = ()
-  fun set_option _ _ _ _ _ = error "Logic demo_logic does not have any options"
-
   val binding = \<^binding>\<open>demo_logic\<close>
+  structure Utils = Forward_Hoare_Utils(val logic_name = Binding.name_of binding)
+  open Utils
+
+  (* type program = instruction list *)
+  type range = string * int * int
+
+(*   type options = unit
+  val default_options = ()
+  fun set_option _ _ _ _ _ = error "Logic demo_logic does not have any options" *)
 
   fun program_term_typ _ = \<^typ>\<open>program\<close>
 
@@ -34,21 +37,22 @@ structure Demo_Hoare_Logic = Hoare_Logic(
   in p end *)
     
   (* TODO support relative ranges *)
-  fun read_range _ : range context_parser = 
+  fun read_range options _ : range context_parser = 
     Scan.lift (Parse.nat --| Parse.minus -- Parse.nat)
+      >> (fn (start,endd) => (get_current_program_name options, start, endd))
 
-  fun pretty_range _ (start,stop) = Pretty.strs [string_of_int start,"-",string_of_int stop]
+  fun pretty_range _ (_,start,stop) = Pretty.strs [string_of_int start,"-",string_of_int stop]
 
   fun hoare_thm _ pre prog post = \<^const>\<open>hoare\<close> $ pre $ prog $ post |> HOLogic.mk_Trueprop
 
-  fun valid_range (program:term) ((start,endd):range) =
-    start <= endd andalso start >= 0 andalso endd <= length (HOLogic.dest_list program)
+(*   fun valid_range (program:term) ((start,endd):range) =
+    start <= endd andalso start >= 0 andalso endd <= length (HOLogic.dest_list program) *)
 
   fun invariant_implication _ (t1:term) (t2:term) = 
     \<^const>\<open>pc_imp\<close> $ t1 $ t2 |> HOLogic.mk_Trueprop
 
-  fun extract_range (program:term) ((start,endd):range) : term =
-    program |> HOLogic.dest_list |> drop start |> take (endd-start) |> HOLogic.mk_list \<^typ>\<open>instruction\<close>
+  fun extract_range ctxt ((program,start,endd):range) : term =
+    get_my_program ctxt program |> HOLogic.dest_list |> drop start |> take (endd-start) |> HOLogic.mk_list \<^typ>\<open>instruction\<close>
 
   fun check_program ctxt program = let
     val list = HOLogic.dest_list program
@@ -93,15 +97,16 @@ structure Demo_Hoare_Logic = Hoare_Logic(
     |> HOLogic.mk_Trueprop |> Thm.cterm_of \<^context> |> Goal.init
     |> SINGLE (resolve_tac \<^context> @{thms hoare_seq'} 1) |> the
 
-  fun join_hoare ctxt _ _ (l1,l2) _ (l3,l4) _ h1 h2 = let
+  fun join_hoare ctxt _ ((prog12,l1,l2):range) _ ((prog34,l3,l4):range) _ h1 h2 = let
     val _ = if l2 <> l3 then error "mismatch" else ()
+    val _ = if prog12 <> prog34 then error "mismatch" else ()
     val thm = join_hoare_goal 
               |> SINGLE (solve_tac ctxt [h1] 1
                     THEN solve_tac ctxt [h2] 1
                     THEN REPEAT (resolve_tac ctxt @{thms append_aux1} 1)
                     THEN solve_tac ctxt @{thms append_aux2} 1) |> the
               |> Goal.finish ctxt
-    val r = (l1,l4)
+    val r = (prog12,l1,l4)
     in (r,thm) end
 )
 

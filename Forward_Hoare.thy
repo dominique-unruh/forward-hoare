@@ -18,6 +18,7 @@ named_theorems hoare_updated
 named_theorems hoare_wp
 
 ML_file "forward_hoare.ML"
+ML_file "forward_hoare_utils.ML"
 ML_file "hoare_logic.ML"
 
 

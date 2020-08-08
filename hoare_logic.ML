@@ -11,22 +11,23 @@ val check_program: Proof.context -> term -> unit
 (* Can assume that term is of type invariant_typ *)
 val check_invariant: Proof.context -> term -> unit
 (* val read_program: Proof.context -> string -> program *)
-val read_range: range option -> range context_parser
+val read_range: options -> range option -> range context_parser
 val pretty_range: Proof.context -> range -> Pretty.T
 (* val read_invariant: Proof.context -> string -> term *)
 val postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table
-(* join_hoare ctxt program invariant1 range12 invariant2 range23 invariant3 thm12 thm23 *)
-val join_hoare: Proof.context -> term -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
+(* join_hoare ctxt invariant1 range12 invariant2 range23 invariant3 thm12 thm23 *)
+val join_hoare: Proof.context -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
 (* valid_range program range *)
-val valid_range: term -> range -> bool
-(* extract_range program range
-Contract: valid range *)
-val extract_range: term -> range -> term
+(* val valid_range: term -> range -> bool *)
+(* extract_range range
+Contract: return value must not change
+ *)
+val extract_range: Proof.context -> range -> term
 (* hoare_thm pre prog post *)
 val hoare_thm: Proof.context -> term -> term -> term -> term
 val invariant_implication: Proof.context -> term -> term -> term
 val default_options: options
-(* set_option m name value options *)
+(* set_option name content ctxt m options *)
 val set_option: string -> string -> Proof.context -> morphism -> options -> options
 end
 
@@ -69,18 +70,18 @@ fun ex_options options = Ex_Options (Options options)
 fun options_ex (Ex_Options (Options options)) = options
   | options_ex (Ex_Options e) = err ("options_ex: " ^ \<^make_string> e)
 
-fun read_range relative = 
-  Logic.read_range (Option.map range_ex relative) >> ex_range
+fun read_range options relative = 
+  Logic.read_range (options_ex options) (Option.map range_ex relative) >> ex_range
 
 fun pretty_range ctxt range = Logic.pretty_range ctxt (range_ex range)
 
-fun valid_range prog range = Logic.valid_range prog (range_ex range)
-fun extract_range ctxt prog range = let
-  val fragment = Logic.extract_range prog (range_ex range)
+(* fun valid_range prog range = Logic.valid_range prog (range_ex range) *)
+fun extract_range ctxt range = let
+  val fragment = Logic.extract_range ctxt (range_ex range)
   val _ = catch_internal_error Logic.binding "typechecking result of extract_range" (Sign.cert_term (Proof_Context.theory_of ctxt)) fragment
   in fragment end
 
-fun join_hoare ctxt prog a r1 b r2 c h1 h2 = Logic.join_hoare ctxt prog a (range_ex r1) b (range_ex r2) c h1 h2
+fun join_hoare ctxt a r1 b r2 c h1 h2 = Logic.join_hoare ctxt a (range_ex r1) b (range_ex r2) c h1 h2
   |> apfst ex_range
 
 fun hoare_thm ctxt pre prog post = let
@@ -95,7 +96,8 @@ fun invariant_implication ctxt a b = let
 
 val default_options = ex_options Logic.default_options
 
-fun set_option name content ctxt m options = ex_options (Logic.set_option name content ctxt m (options_ex options))
+fun set_option name content ctxt m options = 
+  ex_options (Logic.set_option name content ctxt m (options_ex options))
 
 fun program_term_typ options = Logic.program_term_typ (options_ex options)
 
@@ -114,7 +116,7 @@ val logic : logic = {
   read_range = read_range,
   pretty_range = pretty_range,
   extract_range = extract_range,
-  valid_range = valid_range,
+  (* valid_range = valid_range, *)
   hoare_thm = hoare_thm,
   (* read_invariant = Logic.read_invariant, *)
   join_hoare = join_hoare,

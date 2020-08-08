@@ -70,15 +70,15 @@ type logic = {
   serial: serial,
   program_term_typ: ex_options -> typ,
   check_program: Proof.context -> term -> unit,
-  read_range: ex_range option -> ex_range context_parser,
+  read_range: ex_options -> ex_range option -> ex_range context_parser,
   pretty_range: Proof.context -> ex_range -> Pretty.T,
   invariant_typ: ex_options -> typ,
   check_invariant: Proof.context -> term -> unit,
   (* read_invariant: Proof.context -> string -> term, *)
-  valid_range: term -> ex_range -> bool,
-  extract_range: Proof.context -> term -> ex_range -> term, (* TODO do we need that? *)
+  (* valid_range: term -> ex_range -> bool, *)
+  extract_range: Proof.context -> ex_range -> term,
   hoare_thm: Proof.context -> term -> term -> term -> term,
-  join_hoare: Proof.context -> term -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
+  join_hoare: Proof.context -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
   postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table,
   invariant_implication: Proof.context -> term -> term -> term,
   (* program_morphism: morphism -> term -> term *)
@@ -86,10 +86,13 @@ type logic = {
   set_option: string -> string -> Proof.context -> morphism -> ex_options -> ex_options
 }
 
+fun name_of_logic ({binding,...}:logic) = Binding.name_of binding
+fun same_logic (l1:logic) (l2:logic) = (#serial l1 = #serial l2)
+
 structure Logic_Data = Theory_Data(
   type T = logic Symtab.table
   val empty = Symtab.empty
-  val merge = Symtab.merge (fn (x,y) => #serial x = #serial y)
+  val merge = Symtab.merge (fn (x,y) => same_logic x y)
   val extend = I
 )
 
@@ -129,17 +132,18 @@ fun invariant_eq (i1,i2) = #serial i1 = #serial i2
 
 type hoare = {
   serial: serial,
+  logic: logic,
   binding: binding,
   range: ex_range,
-  program: string,
+  (* program: string, *)
   program_fragment_const: term,
   precondition: string,
   postcondition: string,
   valid: thm
 }
 
-fun hoare_morphism m ({serial,binding,range,program,program_fragment_const,precondition,postcondition,valid}:hoare): hoare = 
-  {serial=serial, binding=binding, range=range, program=program, 
+fun hoare_morphism m ({serial,logic,binding,range,program_fragment_const,precondition,postcondition,valid}:hoare): hoare = 
+  {serial=serial, logic=logic, binding=binding, range=range, 
    program_fragment_const = Morphism.term m program_fragment_const,
    precondition=precondition, postcondition=postcondition,
    valid = Morphism.thm m valid}
@@ -150,52 +154,60 @@ structure Hoare_Data = Generic_Data (
   type T = { invariants: invariant Symtab.table,
              hoares: hoare Symtab.table,
              programs: program Symtab.table,
-             current_program: string option,
+             current_logic: logic option,
              options: ex_options option
   }
   val empty = { invariants=Symtab.empty, hoares=Symtab.empty,
-    programs=Symtab.empty, current_program=NONE, options=NONE }
+    programs=Symtab.empty, current_logic=NONE, options=NONE }
   fun merge (d1,d2) =
     { invariants = Symtab.merge invariant_eq (#invariants d1, #invariants d2),
       hoares = Symtab.merge hoare_eq (#hoares d1, #hoares d2),
       programs = Symtab.merge program_eq (#programs d1, #programs d2),
-      current_program = NONE, options = NONE }
-  fun extend {invariants,hoares,programs,current_program=_,options} =
-    {invariants=invariants, hoares=hoares, programs=programs, current_program=NONE, options=options}
+      current_logic = NONE, options = NONE }
+  fun extend {invariants,hoares,programs,current_logic=_,options} =
+    {invariants=invariants, hoares=hoares, programs=programs, current_logic=NONE, options=options}
 )
 
-fun map_invariants f = Hoare_Data.map (fn {invariants,hoares,programs,current_program,options} => 
-  {invariants=f invariants, hoares=hoares, programs=programs, current_program=current_program, options=options})
-fun map_hoares f = Hoare_Data.map (fn {invariants,hoares,programs,current_program,options} => 
-  {invariants=invariants, hoares=f hoares, programs=programs, current_program=current_program, options=options})
-fun map_programs f = Hoare_Data.map (fn {invariants,hoares,programs,current_program,options} => 
-  {invariants=invariants, hoares=hoares, programs=f programs, current_program=current_program, options=options})
-fun map_options f = Hoare_Data.map (fn {invariants,hoares,programs,current_program,options} => 
-  {invariants=invariants, hoares=hoares, programs=programs, current_program=current_program, options=f options})
-fun set_current_program name = Hoare_Data.map (fn {invariants,hoares,programs,current_program=_,options} => 
-  {invariants=invariants, hoares=hoares, programs=programs, current_program=SOME name, options=options})
+fun map_invariants f = Hoare_Data.map (fn {invariants,hoares,programs,current_logic,options} => 
+  {invariants=f invariants, hoares=hoares, programs=programs, current_logic=current_logic, options=options})
+fun map_hoares f = Hoare_Data.map (fn {invariants,hoares,programs,current_logic,options} => 
+  {invariants=invariants, hoares=f hoares, programs=programs, current_logic=current_logic, options=options})
+fun map_programs f = Hoare_Data.map (fn {invariants,hoares,programs,current_logic,options} => 
+  {invariants=invariants, hoares=hoares, programs=f programs, current_logic=current_logic, options=options})
+fun map_options f = Hoare_Data.map (fn {invariants,hoares,programs,current_logic,options} => 
+  {invariants=invariants, hoares=hoares, programs=programs, current_logic=current_logic, options=f options})
+fun set_current_logic (logic:logic) = Hoare_Data.map (fn {invariants,hoares,programs,current_logic=_,options} => 
+  {invariants=invariants, hoares=hoares, programs=programs, current_logic=SOME logic, options=options})
 fun add_invariant0 i = map_invariants (Symtab.update_new (Binding.name_of (#binding i), i))
 fun add_hoare0 i = map_hoares (Symtab.update_new (Binding.name_of (#binding i), i))
 fun add_hoare0decl i m = add_hoare0 (hoare_morphism m i)
-fun add_program0 p context = let
-  val name = Binding.name_of (#binding p)
-  val context = map_programs (Symtab.update_new (name, p)) context
-  val context = set_current_program name context
-  in context end
-fun add_program0decl p m = add_program0 (program_morphism m p)
 fun get_invariant ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #invariants) name
 fun get_the_invariant ctxt name = get_invariant ctxt name |> the' (fn _ => "Unknown invariant " ^ name)
 fun get_hoare ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #hoares) name
 fun get_the_hoare ctxt name = get_hoare ctxt name |> the' (fn _ => "Unknown Hoare judgment " ^ name)
-fun get_program ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #programs) name
-fun get_the_program ctxt name = get_program ctxt name |> the' (fn _ => "Unknown program " ^ name)
-fun get_current_program ctxt = Hoare_Data.get ctxt |> #current_program
-fun get_the_current_program ctxt = get_current_program ctxt |> the' (fn _ => "No current program")
+fun get_program context name = Symtab.lookup (Hoare_Data.get context |> #programs) name
+fun get_the_program context name = get_program context name |> the' (fn _ => "Unknown program " ^ name)
+fun get_current_logic ctxt = Hoare_Data.get ctxt |> #current_logic
+fun get_the_current_logic ctxt = get_current_logic ctxt |> the' (fn _ => "No current logic")
 
 structure Hoare_Proof_Data = Proof_Data (
   type T = { current_invariant: invariant option }
   fun init _ = { current_invariant=NONE }
 )
+
+
+fun get_options logic context = case Hoare_Data.get context |> #options of 
+    SOME options => options
+  | NONE => #default_options logic
+
+fun set_option (logic:logic) name content m context = let
+  val ctxt = Context.proof_of context
+  val options = get_options logic context
+  val options = #set_option logic name content ctxt m options
+  val context = map_options (fn _ => SOME options) context
+  in context end
+
+
 
 fun set_current_invariant invariant = Hoare_Proof_Data.map (fn
   { current_invariant=_ } => { current_invariant = SOME invariant })
@@ -215,28 +227,28 @@ fun catch_internal_error logic func f x = f x
      val name = logic |> Binding.print
    in raise TYPE("Internal error " ^ func ^ " (logic " ^ name ^ "): " ^ msg, Ts, ts) end
 
-fun add_invariant (toolkit:'st toolkit) logic binding (invariant:term) st : invariant * 'st = let
+fun add_invariant (toolkit:'st toolkit) (logic:logic) binding (invariant:term) st : invariant * 'st = let
   fun bind suffix = Binding.suffix_name suffix binding
   val (invariant_const,thm,st) = 
       #define toolkit (bind "_inv") (bind "_inv_def") invariant st
       (* def' (bind "_inv") invariant ctxt *)
-  val info : invariant = {serial=serial(), logic=logic, binding=binding, const=invariant_const, term=invariant, def_thm=thm}
+  val info : invariant = {serial=serial(), logic = name_of_logic logic, binding=binding, const=invariant_const, term=invariant, def_thm=thm}
   val st = #declaration toolkit (fn m => add_invariant0 (invariant_morph m info)) st
   in (info,st) end
 
-fun new_hoare (toolkit:'a toolkit) binding after_qed0 (program:string) range (precondition:string) (postcondition:string) (st:'a) : Proof.state = let
+fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:string) (postcondition:string) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
-  val program = get_the_program context program
+  (* val program = get_the_program context program *)
   val precondition = case get_invariant context precondition of
     SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
   val postcondition = case get_invariant context postcondition of
     SOME inv => inv | NONE => error ("Undefined postcondition " ^ postcondition)
   fun bind suffix = Binding.suffix_name suffix binding
-  val logic = get_the_logic (Context.theory_of context) (#logic program)
-  val _ = if #valid_range logic (#code program) range then ()
-          else error ("Invalid range " ^ Pretty.string_of (#pretty_range logic ctxt range))
-  val program_fragment = (#extract_range logic) ctxt (#code program) range
+  (* val logic = get_the_logic (Context.theory_of context) (#logic program) *)
+(*   val _ = if #valid_range logic range then ()
+          else error ("Invalid range " ^ Pretty.string_of (#pretty_range logic ctxt range)) *)
+  val program_fragment = (#extract_range logic) ctxt range
   val _ = tracing ("Range: " ^ (Pretty.string_of (#pretty_range logic ctxt range)))
   val _ = tracing ("Program fragment: " ^ Syntax.string_of_term ctxt program_fragment)
   val (program_fragment_const,_,st) = 
@@ -247,7 +259,8 @@ fun new_hoare (toolkit:'a toolkit) binding after_qed0 (program:string) range (pr
         precondition=Binding.name_of (#binding precondition),
         postcondition=Binding.name_of (#binding postcondition),
         program_fragment_const=program_fragment_const,
-        program=program |> #binding |> Binding.name_of,
+        logic = logic,
+        (* program=program |> #binding |> Binding.name_of, *)
         valid=valid}
       val st = #note toolkit (Binding.suffix_name "_valid" binding) valid st
       val st = #declaration toolkit (add_hoare0decl info) st
@@ -262,13 +275,11 @@ fun parse_src expect ctxt (parser:'a context_parser) (src:Token.src) : 'a = let
   val (result,_) = Scan.catch (parser --| eof) (Context.Proof ctxt, src @ [Token.eof])
   in result end
 
-fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (program:string) range (precondition:string) 
+fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:string) 
     (postcondition:binding) (make_post:string) (make_post_args:Token.src) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
-  val program' = get_program context program |> the' (fn _ => "Unknown program " ^ program)
-  val logic = get_the_logic (Context.theory_of context) (#logic program')
-  val program_fragment = (#extract_range logic) ctxt (#code program') range
+  val program_fragment = (#extract_range logic) ctxt range
   val precondition' = case get_invariant context precondition of
     SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
   val make_post' = get_the_postcondition_generator logic make_post
@@ -276,8 +287,8 @@ fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (program:string) rang
   val (post,tac) = make_post' program_fragment (#const precondition')
   val _ = catch_internal_error (#binding logic) ("typechecking result of postcondition generator "^make_post)
             (Sign.cert_term (Proof_Context.theory_of ctxt)) post
-  val (post,st) = add_invariant toolkit (#logic program') postcondition post st
-  val state = new_hoare toolkit binding after_qed0 program range precondition (Binding.name_of postcondition) st
+  val (post,st) = add_invariant toolkit logic postcondition post st
+  val state = new_hoare toolkit binding after_qed0 logic range precondition (Binding.name_of postcondition) st
   val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
     |> Seq.first_result "could not unfold definition of postcondition (internal error)"
   val (state,_) = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (tac ctxt)), Position.no_range) state
@@ -290,17 +301,19 @@ fun join_hoare (toolkit:'a toolkit) binding (hoare1:string) (hoare2:string) (st:
   val ctxt = Context.proof_of context
   val hoare1' = get_the_hoare context hoare1
   val hoare2' = get_the_hoare context hoare2
-  val program = #program hoare1'
-  val _ = if #program hoare1' <> #program hoare2' then error "mismatch" else ()
+  (* val program = #program hoare1' *)
+  (* val _ = if #program hoare1' <> #program hoare2' then error "mismatch" else () *)
+  val _ = if same_logic (#logic hoare1') (#logic hoare2') then () else error "mismatch"
   val _ = if #postcondition hoare1' <> #precondition hoare2' then error "mismatch" else ()
-  val program' = program |> get_the_program context
-  val logic = program' |> #logic |> get_the_logic' ctxt
+  (* val program' = program |> get_the_program context *)
+  (* val logic = program' |> #logic |> get_the_logic' ctxt *)
   val a = hoare1' |> #precondition |> get_the_invariant context |> #const
   val b = hoare1' |> #postcondition |> get_the_invariant context |> #const
   val c = hoare2' |> #postcondition |> get_the_invariant context |> #const
-  val (range,joined_thm) = #join_hoare logic ctxt (#code program') a (#range hoare1') b (#range hoare2') c
+  val logic = #logic hoare1'
+  val (range,joined_thm) = #join_hoare logic ctxt a (#range hoare1') b (#range hoare2') c
           (#valid hoare1') (#valid hoare2')
-  val program_fragment = (#extract_range logic) ctxt (#code program') range
+  val program_fragment = (#extract_range logic) ctxt range
   val (program_fragment_const,_,st) = 
       #define toolkit (Binding.suffix_name "_prog" binding) (Binding.suffix_name "_prog_def" binding) program_fragment st
 
@@ -310,8 +323,9 @@ fun join_hoare (toolkit:'a toolkit) binding (hoare1:string) (hoare2:string) (st:
     precondition= #precondition hoare1',
     postcondition= #postcondition hoare2',
     program_fragment_const=program_fragment_const,
-    program=program,
-    valid=joined_thm
+    logic = logic,
+    (* program=program, *)
+    valid = joined_thm
   }
   
   val st = #declaration toolkit (add_hoare0decl info) st
@@ -336,17 +350,13 @@ fun extend_hoare_auto (toolkit:'a toolkit) binding (previous:string) after_qed0 
   val context = #context toolkit st
   val binding_step = Binding.suffix_name "_step" binding
   val previous_hoare = get_the_hoare context previous
-  val program = #program previous_hoare
+  val logic = #logic previous_hoare
   val precondition = #postcondition previous_hoare
   fun after_qed (st, hoare) = let
     val (st, joined_hoare) = join_hoare toolkit binding previous (Binding.name_of binding_step) st
     in after_qed0 (st, hoare, joined_hoare) end
-  val state = new_hoare_auto toolkit binding_step after_qed program range precondition postcondition make_post make_post_args st
+  val state = new_hoare_auto toolkit binding_step after_qed logic range precondition postcondition make_post make_post_args st
 in state end
-
-fun get_options logic context = case Hoare_Data.get context |> #options of 
-    SOME options => options
-  | NONE => #default_options logic
 
 
 fun read_term_typed ctxt T str = let
@@ -354,6 +364,10 @@ fun read_term_typed ctxt T str = let
   val typed = Const("_type_constraint_", T --> T) $ raw_term
   val t = Syntax.check_term ctxt typed
   in t end
+
+fun set_current_logic_command (toolkit:'a toolkit) (logic:logic) st = let
+  val _ = tracing ("Setting current logic to " ^ name_of_logic logic)
+  in #declaration toolkit (K (set_current_logic logic)) st end
 
 fun define_program_command (toolkit:'a toolkit) (logic:string) binding content (st:'a) : 'a = let
   val context = #context toolkit st
@@ -363,24 +377,24 @@ fun define_program_command (toolkit:'a toolkit) (logic:string) binding content (
   val options = get_options logic' context
   val program = read_term_typed ctxt (#program_term_typ logic' options) content
   val _ = #check_program logic' ctxt program
+  val st = set_current_logic_command toolkit logic' st
   val (_,_,st) = #define toolkit binding (Binding.suffix_name "_def" binding) program st
+  val name = Binding.name_of binding
+(* TODO: instead of argument p, use variable prog *)
+  fun add_program0decl (p:program) (m:morphism) context = let
+    val context = map_programs (Symtab.update_new (name, program_morphism m p)) context
+    val context = set_option logic' "@last_program" name m context
+    in context end
   val st = #declaration toolkit (add_program0decl
       {serial=serial(), binding=binding, logic=logic, code=program}) st
 in st end
-
-fun set_option (logic:logic) name content m context = let
-  val ctxt = Context.proof_of context
-  val options = get_options logic context
-  val options = #set_option logic name content ctxt m options
-  val context = map_options (fn _ => SOME options) context
-  in context end
-
 
 fun set_option_command (toolkit:'a toolkit) (logic:string) name content (st:'a) : 'a = let
   val context = #context toolkit st
   (* val ctxt = Context.proof_of context *)
   val thy = Context.theory_of context
   val logic' = get_the_logic thy logic
+  val st = set_current_logic_command toolkit logic' st
   val st = #declaration toolkit (set_option logic' name content) st
 in st end
 
@@ -392,7 +406,8 @@ fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : '
   val term = read_term_typed ctxt (#invariant_typ logic' options) content
   val _ = #check_invariant logic' ctxt term
   val _ = tracing ("Declaring invariant "^ string_of_binding_invariant name ^ " in logic " ^ string_of_binding_logic (#binding logic'))
-  val (_,st) = add_invariant toolkit logic name term st
+  val st = set_current_logic_command toolkit logic' st
+  val (_,st) = add_invariant toolkit logic' name term st
 in st end
 
 fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
@@ -401,14 +416,14 @@ fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (r
    (make_post:string) (make_post_args:Token.src) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
-  val program = get_the_current_program context
-  val program' = get_the_program context program
-  val logic = get_the_logic' ctxt (#logic program')
-  val range' = parse_src (K "end of range description") ctxt (#read_range logic NONE) range
+  val logic = get_the_current_logic context
+  val options = get_options logic context
+  val range' = parse_src (K "end of range description") ctxt (#read_range logic options NONE) range
+  val st = set_current_logic_command toolkit logic st
   val state = case extends of
     NONE => (case pre of
              NONE => error "Please specify precondition (pre) or previous Hoare judgment (extends)"
-             | SOME pre => new_hoare_auto toolkit name fst program range' pre post make_post make_post_args st)
+             | SOME pre => new_hoare_auto toolkit name fst logic range' pre post make_post make_post_args st)
     | SOME previous => extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st
   in state end
 
@@ -422,6 +437,7 @@ fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:stri
   val _ = #check_invariant logic ctxt term
   val goal = #invariant_implication logic ctxt (#const invariant) term
   fun after_qed thm = #note toolkit binding thm
+  (* val st = set_current_logic_command toolkit logic st *)
   val state = #theorem toolkit after_qed goal st
   val state = Proof.map_context (set_current_invariant invariant) state
 in state end
@@ -536,6 +552,5 @@ val _ = Outer_Syntax.command \<^command_keyword>\<open>hoare'\<close> "Run a Hoa
   (command_parser_proof proof_toolkit >> Toplevel.proof)
 val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>Hoare'\<close> "Run a Hoare logic command (with proof obligation)"
   (command_parser_proof lthy_toolkit)
-
 
 end
