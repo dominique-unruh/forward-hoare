@@ -355,6 +355,8 @@ lemma postcondition_default2_valid:
   sorry
 
 definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
+abbreviation (input) "independentL_of e x \<equiv> (\<forall>m2. independent_of (\<lambda>m1. e m1 m2) x)"
+abbreviation (input) "independentR_of e x \<equiv> (\<forall>m1. independent_of (\<lambda>m2. e m1 m2) x)"
 
 
 (* axiomatization independent_of :: "('mem \<Rightarrow> 'a) \<Rightarrow> ('mem,'b) var \<Rightarrow> bool" *)
@@ -535,7 +537,11 @@ lemma join_hoare:
   shows "hoare invariant1 srt invariant3"
   using assms unfolding hoare_def by simp
 
-
+(* We use \<longrightarrow> and not \<Longrightarrow> in invariant implications because
+   otherwise applying a rule to an invariant implication subgoal 
+   leaves too much freedom to Isabelle and Isabelle is not forced to
+   match the "invariant m" part of the conclusion of the rule
+ *)
 lemma wp[hoare_wp add]: 
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
@@ -550,6 +556,16 @@ lemma untouched[hoare_untouched add]:
   assumes imp: "\<And>m. A m \<Longrightarrow> B m"
   shows "\<And>m. invariant m \<longrightarrow> B m"
   using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
+  by (auto simp: semantics1_Set_invalid)
+
+lemma untouchedLR[hoare_untouched add]: 
+  fixes x :: "('mem,'val) var"
+  assumes "invariant \<equiv> postcondition_default2 ([Set x e],[Set x' e']) A"
+  assumes indepL: "independentL_of B x"
+  assumes indepR: "independentR_of B x'"
+  assumes imp: "\<And>m1 m2. A m1 m2 \<Longrightarrow> B m1 m2"
+  shows "\<And>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
+  using imp indepL indepR unfolding assms(1) postcondition_default2_def independent_of_def 
   by (auto simp: semantics1_Set_invalid)
 
 lemma updated[hoare_updated add]:

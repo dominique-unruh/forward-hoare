@@ -130,6 +130,10 @@ Hoare' invariant_has step1x2: step1 \<rightarrow> "INV2[$x2=2] :: (memory,memory
 Hoare' invariant_has step1x: step1 \<rightarrow> "INV2[$x1+1=$x2]"
   using step1x1 step1x2 by auto
 
+Hoare step2: range 2~2 pre step1 post step2 = default
+
+Hoare' invariant_has step2x1: step2 \<rightarrow> "INV2[$x1=1] :: (memory,memory) rinvariant"
+  using step1x1 apply untouched by auto
 
 lemma True
 proof -

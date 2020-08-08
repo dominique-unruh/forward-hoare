@@ -445,10 +445,13 @@ in state end
 fun filter_OF (thms1:thm list) (thms2:thm list) : thm list = 
   thms1 |> map_filter (fn thm' => SOME (thm' OF thms2) handle THM _ => NONE)
 
+fun filter_inst ctxt (thms:thm list) var value : thm list =
+  thms |> map_filter (fn thm' => SOME (Drule.infer_instantiate ctxt [(var,value)] thm') handle THM _ => NONE)
+
 fun current_invariant_tac thms ctxt = let
   val thms = thms ctxt
   val inv_def = get_the_current_invariant_def ctxt
-  val thms_inst = filter_OF thms [inv_def]  
+  val thms_inst = (*  |> filter_inst ("invariant",0) ? *) filter_OF thms [inv_def]  
   val _ = if null thms_inst 
           then error ("No rules found that match invariant " ^ Binding.print (get_the_current_invariant ctxt |> #binding)) else ()
   val _ = tracing "Available rules for this invariant:"
