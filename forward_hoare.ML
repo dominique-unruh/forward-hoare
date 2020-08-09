@@ -226,7 +226,7 @@ fun invariant_morph m ({serial,logic,binding,term,const,def_thm}:invariant) : in
 
 fun catch_internal_error logic func f x = f x
    handle TYPE(msg, Ts, ts) => let 
-     val name = logic |> Binding.print
+     val name = logic |> string_of_binding_logic
    in raise TYPE("Internal error " ^ func ^ " (logic " ^ name ^ "): " ^ msg, Ts, ts) end
 
 fun add_invariant (toolkit:'st toolkit) (logic:logic) binding (invariant:term) st : invariant * 'st = let
@@ -447,22 +447,26 @@ in state end
 fun filter_OF (thms1:thm list) (thms2:thm list) : thm list = 
   thms1 |> map_filter (fn thm' => SOME (thm' OF thms2) handle THM _ => NONE)
 
-fun filter_inst ctxt (thms:thm list) var value : thm list =
-  thms |> map_filter (fn thm' => SOME (Drule.infer_instantiate ctxt [(var,value)] thm') handle THM _ => NONE)
+(* fun filter_inst ctxt (thms:thm list) var value : thm list =
+  thms |> map_filter (fn thm' => SOME (Drule.infer_instantiate ctxt [(var,value)] thm') handle THM _ => NONE) *)
 
-fun current_invariant_tac thms ctxt = let
+fun current_invariant_tac thms ctxt = SUBGOAL (fn (_,i) => let
   val thms = thms ctxt
-  val inv_def = get_the_current_invariant_def ctxt
-  val thms_inst = (*  |> filter_inst ("invariant",0) ? *) filter_OF thms [inv_def]  
+  val inv = get_the_current_invariant ctxt
+  (* val logic = #logic inv *)
+  val inv_def = #def_thm inv
+  val thms_inst = filter_OF thms [inv_def]  
+  val inv_markup_name = #binding inv |> string_of_binding_invariant
   val _ = if null thms_inst 
-          then error ("No rules found that match invariant " ^ Binding.print (get_the_current_invariant ctxt |> #binding)) else ()
-  val _ = tracing "Available rules for this invariant:"
-  val _ = app (tracing o Syntax.string_of_term ctxt o Thm.prop_of) thms_inst
+          then error ("No rules found that match invariant " ^ inv_markup_name) else ()
+  val _ = Pretty.fbreaks (Pretty.str ("Available rules for invariant " ^ inv_markup_name ^ ":") ::
+              map (Pretty.item o single o Syntax.pretty_term ctxt o Thm.prop_of) thms_inst)
+          |> Pretty.block |> Pretty.string_of |> tracing
   in
-    resolve_tac ctxt thms_inst
+    resolve_tac ctxt thms_inst i
 (*     THEN'
     solve_tac ctxt [inv_def] *)
-  end
+  end)
 
 val invariant_untouched_tac = current_invariant_tac (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_untouched\<close>)
 val invariant_updated_tac = current_invariant_tac (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>)

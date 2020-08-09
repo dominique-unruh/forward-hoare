@@ -21,7 +21,7 @@ fun get_my_program ctxt name = let
   val context = Context.Proof ctxt
   val prog : program = get_the_program context name
   val _ = if #logic prog = Name.logic_name then ()
-          else error (Binding.print (#binding prog) ^ " is from logic " ^ #logic prog ^ " but needed a program from logic " ^ Name.logic_name)
+          else error (string_of_binding_program (#binding prog) ^ " is from logic " ^ #logic prog ^ " but needed a program from logic " ^ Name.logic_name)
   in #code prog end
 
 fun invariant_parse_translation _ _ t = t
