@@ -155,14 +155,14 @@ lemma join_hoare:
 lemma wp[hoare_wp add]: 
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes imp: "\<And>m. A m \<Longrightarrow> B (m(x:=e m))"
-  shows "\<And>m. invariant m \<longrightarrow> B m"
+  shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp unfolding assms(1) postcondition_default_def by auto
 
 lemma untouched[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes indep: "independent_of B x"
   assumes imp: "\<And>m. A m \<Longrightarrow> B m"
-  shows "\<And>m. invariant m \<longrightarrow> B m"
+  shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
   apply auto
   by (metis fun_upd_def)
@@ -170,7 +170,7 @@ lemma untouched[hoare_untouched add]:
 lemma updated[hoare_updated add]:
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes indep: "independent_of e x"
-  shows "\<And>m. invariant m \<longrightarrow> m x = e m"
+  shows "\<forall>m. invariant m \<longrightarrow> m x = e m"
   using assms unfolding assms postcondition_default_def independent_of_def by auto
 
 

@@ -81,6 +81,8 @@ type logic = {
   join_hoare: Proof.context -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
   postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table,
   invariant_implication: Proof.context -> term -> term -> term,
+  invariant_implication_syntax: Proof.context -> term -> term -> term,
+  invariant_parse_translation: Proof.context -> term -> term -> term,
   (* program_morphism: morphism -> term -> term *)
   default_options: ex_options,
   set_option: string -> string -> Proof.context -> morphism -> ex_options -> ex_options
@@ -178,15 +180,15 @@ fun set_current_logic (logic:logic) = Hoare_Data.map (fn {invariants,hoares,prog
 fun add_invariant0 i = map_invariants (Symtab.update_new (Binding.name_of (#binding i), i))
 fun add_hoare0 i = map_hoares (Symtab.update_new (Binding.name_of (#binding i), i))
 fun add_hoare0decl i m = add_hoare0 (hoare_morphism m i)
-fun get_invariant ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #invariants) name
-fun get_the_invariant ctxt name = get_invariant ctxt name |> the' (fn _ => "Unknown invariant " ^ name)
-fun get_hoare ctxt name = Symtab.lookup (Hoare_Data.get ctxt |> #hoares) name
-fun get_the_hoare ctxt name = get_hoare ctxt name |> the' (fn _ => "Unknown Hoare judgment " ^ name)
+fun get_invariant context name = Symtab.lookup (Hoare_Data.get context |> #invariants) name
+fun get_the_invariant context name = get_invariant context name |> the' (fn _ => "Unknown invariant " ^ name)
+fun get_hoare context name = Symtab.lookup (Hoare_Data.get context |> #hoares) name
+fun get_the_hoare context name = get_hoare context name |> the' (fn _ => "Unknown Hoare judgment " ^ name)
 (* TODO check whether 'name' contains markup, if so, raise error. Same in all other getters *)
 fun get_program context name = Symtab.lookup (Hoare_Data.get context |> #programs) name
 fun get_the_program context name = get_program context name |> the' (fn _ => "Unknown program " ^ name)
-fun get_current_logic ctxt = Hoare_Data.get ctxt |> #current_logic
-fun get_the_current_logic ctxt = get_current_logic ctxt |> the' (fn _ => "No current logic")
+fun get_current_logic context = Hoare_Data.get context |> #current_logic
+fun get_the_current_logic context = get_current_logic context |> the' (fn _ => "No current logic")
 
 structure Hoare_Proof_Data = Proof_Data (
   (* current_invariant is local to a proof obligation created by a hoare' command *)
@@ -435,7 +437,7 @@ fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:stri
   val options = get_options logic context
   val term = read_term_typed ctxt (#invariant_typ logic options) term
   val _ = #check_invariant logic ctxt term
-  val goal = #invariant_implication logic ctxt (#const invariant) term
+  val goal = #invariant_implication logic ctxt (#const invariant) term |> HOLogic.mk_Trueprop
   fun after_qed thm = #note toolkit binding thm
   (* val st = set_current_logic_command toolkit logic st *)
   val state = #theorem toolkit after_qed goal st
@@ -474,6 +476,38 @@ val _ = Theory.setup
     | SOME thm => thm)))
     "[[current_invariant_def]] gives the definition of the currently investigated invariant)")
 
+(* Adapted from syntax_phases.ML *)
+fun mark_atoms tm =
+  let
+    fun mark ((t as Const (c, _)) $ u) =
+          if member (op =) Pure_Thy.token_markers c
+          then t $ u else mark t $ mark u
+      | mark (t $ u) = mark t $ mark u
+      | mark (Abs (x, T, t)) = Abs (x, T, mark t)
+      | mark (Const (c, T)) =
+          Const (Lexicon.mark_const c, T)
+      | mark (Free (x, T)) =
+          Const (Lexicon.mark_fixed x, T)
+      | mark (t as Var (xi, T)) =
+          if xi = Auto_Bind.dddot then Const ("_DDDOT", T)
+          else Syntax.const "_var" $ t
+      | mark a = a;
+  in mark tm end;
+
+fun invariant_implication_tr ctxt [inv1_var,inv2] = let
+(* val _ = \<^print> inv1_var *)
+    val inv1_name = case inv1_var of Free(n,_) => n | _ => error "_invariant_implication parse_translation 1"
+    val inv1 = get_the_invariant (Context.Proof ctxt) inv1_name
+    val logic = get_the_logic' ctxt (#logic inv1)
+    val inv1_const = #const inv1 |> mark_atoms
+    val inv2_tr = inv2 |> #invariant_parse_translation logic ctxt (#const inv1)
+(* Tmp_Hoare.tr_EXPR2_like HOLogic.boolT ctxt inv2 (* TODO also EXPR_like & not hardcoded *) *)
+(* val inv1_const = Free("step2_inv",fastype_of inv1_const) *)
+    val impl = #invariant_implication_syntax logic ctxt inv1_const inv2_tr
+(* val _ = impl |> \<^print> *)
+(* val _ = impl_raw |> Syntax.string_of_term ctxt |> writeln *)
+  in impl end
+  | invariant_implication_tr _ ts = raise TERM("invariant_implication_tr", ts)
 
 (** Isar command **)
 

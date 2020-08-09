@@ -1,11 +1,13 @@
 structure Tmp_Hoare =
 struct
 
-(* TODO changes in concepts:
+(* TODO
 
    Uniform syntax for selecting logic (right after "hoare" keyword)
 
    Options can be given locally (e.g., when defining a program)?
+
+   Use invariant syntax translation when declaring invariants
 
  *)
 
@@ -122,6 +124,41 @@ fun sort_program _ ([],prog) = ([],prog,@{thm sort_program_empty_aux})
         val thm = thm0 OF [thm_sort, thm_insert]
       in (nns', iis', thm) end
     | _ => raise TERM("sort_program: not a list",[prog]))
+
+fun make_syntax_type (Type(name, Ts)) = Term.list_comb 
+  (Const("\<^type>"^name, dummyT), map make_syntax_type Ts)
+
+fun tr_EXPR_like T ctxt e =   let
+  fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) =
+        @{const eval_var(dummy,dummy)} $ Free(n, dummyT) $ Bound i
+    | replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
+    | replace i (t1$t2) = replace i t1 $ replace i t2
+    | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
+    | replace i t = t
+  val e' = replace 0 e
+  val t = Abs("mem",dummyT,e')
+  in
+    Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> T)
+  end
+
+fun tr_EXPR2_like T ctxt e =   let
+  fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) = let
+        val len = String.size n
+        val last = String.sub (n, len-1)
+        val name = String.substring (n, 0, len-1)
+        (* val _ = \<^print> (last,name) *)
+        val lr = case last of #"1" => 1 | #"2" => 0 |
+                    _ => error ("Variable must be indexed. ($"^n^"1 or $"^n^"2 instead of $"^n^")")
+      in @{const eval_var(dummy,dummy)} $ Free(name, dummyT) $ Bound (i+lr) end
+    | replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
+    | replace i (t1$t2) = replace i t1 $ replace i t2
+    | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
+    | replace i t = t
+  val e' = replace 0 e
+  val t = Abs("mem1",dummyT,Abs("mem2",dummyT,e'))
+  in
+    Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> dummyT --> T)
+  end
 
 structure Logic1 = Hoare_Logic(
   val binding = \<^binding>\<open>tmp_hoare\<close>
@@ -278,24 +315,28 @@ structure Logic1 = Hoare_Logic(
 
   fun invariant_implication _ inv1 inv2 = let
     val inv1T = fastype_of inv1
-    val inv2T = fastype_of inv2
-    val _ = if inv1T <> inv2T then raise (TYPE("Comparing invariants of different types", [inv1T,inv2T], [])) else ()
-  in case (is_rinvT inv1T, is_rinvT inv2T) of
-    (false,false) => let
+    (* val inv2T = fastype_of inv2 *)
+    (* val _ = if inv1T <> inv2T then raise (TYPE("Comparing invariants of different types", [inv1T,inv2T], [])) else () *)
+  in case is_rinvT inv1T of
+    false => let
       val memT = inv1T |> dest_invariantT "invariant_implication"
       in 
-         Logic.all_const memT $ Abs("mem",memT, 
-          HOLogic.mk_imp (inv1 $ Bound 0, inv2 $ Bound 0) |> HOLogic.mk_Trueprop)
+         HOLogic.all_const memT $ Abs("mem",memT, 
+           HOLogic.mk_imp (inv1 $ Bound 0, inv2 $ Bound 0))
       end
-  | (true,true) => let
+  | true => let
       val (mem1T,mem2T) = dest_invariant2T "invariant_implication" inv1T
       in
-         Logic.all_const mem1T $ Abs("mem1",mem1T, 
-           Logic.all_const mem2T $ Abs("mem2",mem2T,
-          HOLogic.mk_imp (inv1 $ Bound 1 $ Bound 0, inv2 $ Bound 1 $ Bound 0) |> HOLogic.mk_Trueprop))
+         HOLogic.all_const mem1T $ Abs("mem1",mem1T, 
+           HOLogic.all_const mem2T $ Abs("mem2",mem2T,
+            HOLogic.mk_imp (inv1 $ Bound 1 $ Bound 0, inv2 $ Bound 1 $ Bound 0)))
       end
-  | _ => error "Comparing a relational and a non-relational invariant"
   end
+  
+  fun invariant_parse_translation ctxt other_inv t =
+    if is_rinvT (fastype_of other_inv)
+    then tr_EXPR2_like HOLogic.boolT ctxt t
+    else tr_EXPR_like HOLogic.boolT ctxt t
 )
 
 (* structure Logic2 = Hoare_Logic(
@@ -404,5 +445,6 @@ structure Logic1 = Hoare_Logic(
   end
 )
  *)
+
 
 end

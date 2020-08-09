@@ -2,7 +2,6 @@ structure Demo_Hoare = struct
 
 open Forward_Hoare
 
-
 datatype instruction = Add of var*var | Set of var*int | Guess of var
   fun instruction_to_term (Set (x, i)) = \<^const>\<open>Set\<close> $ HOLogic.mk_literal x $ HOLogic.mk_number HOLogic.intT i
     | instruction_to_term (Guess x) = \<^const>\<open>Guess\<close> $ HOLogic.mk_literal x
@@ -49,7 +48,7 @@ structure Demo_Hoare_Logic = Hoare_Logic(
     start <= endd andalso start >= 0 andalso endd <= length (HOLogic.dest_list program) *)
 
   fun invariant_implication _ (t1:term) (t2:term) = 
-    \<^const>\<open>pc_imp\<close> $ t1 $ t2 |> HOLogic.mk_Trueprop
+    \<^const>\<open>pc_imp\<close> $ t1 $ t2
 
   fun extract_range ctxt ((program,start,endd):range) : term =
     get_my_program ctxt program |> HOLogic.dest_list |> drop start |> take (endd-start) |> HOLogic.mk_list \<^typ>\<open>instruction\<close>

@@ -546,7 +546,7 @@ lemma wp[hoare_wp add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes imp: "\<And>m. A m \<Longrightarrow> B (update_var x (e m) m)"
-  shows "\<And>m. invariant m \<longrightarrow> B m"
+  shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp unfolding assms(1) postcondition_default_def by auto
 
 lemma untouched[hoare_untouched add]: 
@@ -554,7 +554,7 @@ lemma untouched[hoare_untouched add]:
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes indep: "independent_of B x"
   assumes imp: "\<And>m. A m \<Longrightarrow> B m"
-  shows "\<And>m. invariant m \<longrightarrow> B m"
+  shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
   by (auto simp: semantics1_Set_invalid)
 
@@ -564,7 +564,7 @@ lemma untouchedLR[hoare_untouched add]:
   assumes indepL: "independentL_of B x"
   assumes indepR: "independentR_of B x'"
   assumes imp: "\<And>m1 m2. A m1 m2 \<Longrightarrow> B m1 m2"
-  shows "\<And>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
+  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
   using imp indepL indepR unfolding assms(1) postcondition_default2_def independent_of_def 
   by (auto simp: semantics1_Set_invalid)
 
@@ -573,7 +573,7 @@ lemma updated[hoare_updated add]:
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
   assumes indep: "independent_of e x"
-  shows "\<And>m. invariant m \<longrightarrow> eval_var x m = e m"
+  shows "\<forall>m. invariant m \<longrightarrow> eval_var x m = e m"
   using assms unfolding assms postcondition_default_def independent_of_def by auto
 
 lemma updatedL[hoare_updated add]:
@@ -581,7 +581,7 @@ lemma updatedL[hoare_updated add]:
   assumes "invariant \<equiv> postcondition_default2 ([Set x e], p) A"
   assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
   assumes indep: "independent_of e x"
-  shows "\<And>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m1 = e m1"
+  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m1 = e m1"
   using assms unfolding assms postcondition_default2_def independent_of_def by auto
 
 lemma updatedR[hoare_updated add]:
@@ -589,10 +589,8 @@ lemma updatedR[hoare_updated add]:
   assumes "invariant \<equiv> postcondition_default2 (p, [Set x e]) A"
   assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
   assumes indep: "independent_of e x"
-  shows "\<And>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m2 = e m2"
+  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m2 = e m2"
   using assms unfolding assms postcondition_default2_def independent_of_def by auto
-
-ML_file \<open>tmp_hoare.ML\<close>
 
 subsection \<open>Concrete syntax for programs\<close>
 
@@ -602,42 +600,11 @@ syntax "_invariant2_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV2[_]")
 hide_type (open) id
 syntax "_variable_tmp_hoare" :: "id \<Rightarrow> 'a" ("$_")
 
+ML_file \<open>tmp_hoare.ML\<close>
+
 parse_translation \<open>let 
-fun make_syntax_type (Type(name, Ts)) = Term.list_comb 
-  (Const("\<^type>"^name, dummyT), map make_syntax_type Ts)
-
-fun EXPR_like T ctxt [e] =   let
-  fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) =
-        @{const eval_var(dummy,dummy)} $ Free(n, dummyT) $ Bound i
-    | replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
-    | replace i (t1$t2) = replace i t1 $ replace i t2
-    | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
-    | replace i t = t
-  val e' = replace 0 e
-  val t = Abs("mem",dummyT,e')
-  in
-    Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> T)
-  end
-
-fun EXPR2_like T ctxt [e] =   let
-  fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) = let
-        val len = String.size n
-        val last = String.sub (n, len-1)
-        val name = String.substring (n, 0, len-1)
-        (* val _ = \<^print> (last,name) *)
-        val lr = case last of #"1" => 1 | #"2" => 0 |
-                    _ => error ("Variable must be indexed. ($"^n^"1 or $"^n^"2 instead of $"^n^")")
-      in @{const eval_var(dummy,dummy)} $ Free(name, dummyT) $ Bound (i+lr) end
-    | replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
-    | replace i (t1$t2) = replace i t1 $ replace i t2
-    | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
-    | replace i t = t
-  val e' = replace 0 e
-  val t = Abs("mem1",dummyT,Abs("mem2",dummyT,e'))
-  in
-    Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> dummyT --> T)
-  end
-
+fun EXPR_like T ctxt [e] = Tmp_Hoare.tr_EXPR_like T ctxt e
+fun EXPR2_like T ctxt [e] = Tmp_Hoare.tr_EXPR2_like T ctxt e
 in
 [
   (\<^syntax_const>\<open>_expression_tmp_hoare\<close>, EXPR_like dummyT),

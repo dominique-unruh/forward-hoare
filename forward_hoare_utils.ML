@@ -24,5 +24,7 @@ fun get_my_program ctxt name = let
           else error (Binding.print (#binding prog) ^ " is from logic " ^ #logic prog ^ " but needed a program from logic " ^ Name.logic_name)
   in #code prog end
 
+fun invariant_parse_translation _ _ t = t
+
 end
 end

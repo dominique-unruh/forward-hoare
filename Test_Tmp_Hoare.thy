@@ -117,55 +117,29 @@ Forward_Hoare.Hoare_Data.get (Context.Proof \<^context>) |> #programs
 Hoare config (tmp_hoare) left = left
 Hoare config (tmp_hoare) right = right
 
-Hoare invariant (tmp_hoare) start2: "INV2[True] :: (memory, memory) rinvariant"
+lemma True proof
 
-Hoare step1: range 1~1 pre start2 post step1 = default
+hoare invariant (tmp_hoare) start2: "INV2[True] :: (memory, memory) rinvariant"
 
-Hoare' invariant_has step1x1: step1 \<rightarrow> "INV2[$x1=1] :: (memory,memory) rinvariant"
+hoare step1: range 1~1 pre start2 post step1 = default
+
+hoare' invariant_has step1x1: step1 \<rightarrow> "INV2[$x1=1] :: (memory,memory) rinvariant"
   apply updated by auto
 
-Hoare' invariant_has step1x2: step1 \<rightarrow> "INV2[$x2=2] :: (memory,memory) rinvariant"
+hoare' invariant_has step1x2: step1 \<rightarrow> "INV2[$x2=2] :: (memory,memory) rinvariant"
   apply updated by auto
 
-Hoare' invariant_has step1x: step1 \<rightarrow> "INV2[$x1+1=$x2]"
-  using step1x1 step1x2 by auto
+hoare' invariant_has step1x: step1 \<rightarrow> "INV2[$x1+1=$x2]"
+  using \<open>{step1 \<Rightarrow> $x1=1}\<close> \<open>{step1 \<Rightarrow> $x2=2}\<close>
+  by auto
 
-Hoare step2: range 2~2 pre step1 post step2 = default
+hoare step2: range 2~2 pre step1 post step2 = default
 
-Hoare' invariant_has step2x1: step2 \<rightarrow> "INV2[$x1=1] :: (memory,memory) rinvariant"
+hoare' invariant_has step2x1: step2 \<rightarrow> "INV2[$x1=1] :: (memory,memory) rinvariant"
   using step1x1 apply untouched by auto
 
-lemma True
-proof -
-
-  hoare invariant (tmp_hoare) start: "\<lambda>m. True"
-
-  hoare step1: range 1 pre start post step1 = default
-
-  hoare' invariant_has step1x: step1 \<rightarrow> "INV[$x = 1]"
-    apply updated by auto
-
-  hoare step13: extends step1 range 3 post step13=default
-
-  from step1x
-  hoare' invariant_has step13x: step13 \<rightarrow> "INV[$x = 1]"
-    apply untouched by auto
-
-  hoare' invariant_has step13z: step13 \<rightarrow> "INV[$z = 7]"
-    apply updated by auto
-
-  hoare step132: extends step13 range 2 post step132=default
-
-  from step13x
-  hoare' invariant_has step132x: step132 \<rightarrow> "INV[$x = 1]"
-    apply untouched by auto
-
-  from step13z
-  hoare' invariant_has step132z: step132 \<rightarrow> "INV[$z=7]"
-    apply untouched by auto
-
-  hoare' invariant_has step132y: step132 \<rightarrow> "INV[$y=nat]"
-    apply updated by auto
+term \<open>{step2 \<Rightarrow> $x1=1}\<close>
+thm step1x1
 
 qed
 
