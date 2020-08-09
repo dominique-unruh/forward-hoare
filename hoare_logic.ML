@@ -26,6 +26,8 @@ val extract_range: Proof.context -> range -> term
 (* hoare_thm pre prog post *)
 val hoare_thm: Proof.context -> term -> term -> term -> term
 val invariant_implication: Proof.context -> term -> term -> term
+(* Contract: must raise TERM or TYPE only if the implication is invalid *)
+val invariant_implication_lhs: term -> term
 (* invariant_parse_translation ctxt other_invariant new_invariant *)
 val invariant_parse_translation: Proof.context -> term -> term -> term
 val default_options: options
@@ -98,10 +100,6 @@ fun invariant_implication ctxt a b = let
           then error "typechecking result of invariant_implication: not of type bool" else ()
   in term end
 
-val invariant_implication_syntax = Logic.invariant_implication
-
-val invariant_parse_translation = Logic.invariant_parse_translation
-
 val default_options = ex_options Logic.default_options
 
 fun set_option name content ctxt m options = 
@@ -130,8 +128,9 @@ val logic : logic = {
   join_hoare = join_hoare,
   postcondition_generators = Logic.postcondition_generators,
   invariant_implication = invariant_implication,
-  invariant_implication_syntax = invariant_implication_syntax,
-  invariant_parse_translation = invariant_parse_translation,
+  invariant_implication_syntax = Logic.invariant_implication,
+  invariant_parse_translation = Logic.invariant_parse_translation,
+  invariant_implication_lhs = Logic.invariant_implication_lhs,
   default_options = default_options,
   set_option = set_option
   (* program_morphism = program_morphism *)

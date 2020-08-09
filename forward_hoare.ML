@@ -81,6 +81,7 @@ type logic = {
   join_hoare: Proof.context -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
   postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table,
   invariant_implication: Proof.context -> term -> term -> term,
+  invariant_implication_lhs: term -> term,
   invariant_implication_syntax: Proof.context -> term -> term -> term,
   invariant_parse_translation: Proof.context -> term -> term -> term,
   (* program_morphism: morphism -> term -> term *)
@@ -101,6 +102,7 @@ structure Logic_Data = Theory_Data(
 
 
 fun get_logic thy name = Symtab.lookup (Logic_Data.get thy) name
+fun get_logics thy = Logic_Data.get thy
 fun get_the_logic thy name = get_logic thy name |> the' (fn () => "Unknown hoare logic " ^ name)
 fun get_logic' ctxt = get_logic (Proof_Context.theory_of ctxt)
 fun get_the_logic' ctxt = get_the_logic (Proof_Context.theory_of ctxt)
@@ -181,6 +183,7 @@ fun add_invariant0 i = map_invariants (Symtab.update_new (Binding.name_of (#bind
 fun add_hoare0 i = map_hoares (Symtab.update_new (Binding.name_of (#binding i), i))
 fun add_hoare0decl i m = add_hoare0 (hoare_morphism m i)
 fun get_invariant context name = Symtab.lookup (Hoare_Data.get context |> #invariants) name
+fun get_invariants context = Hoare_Data.get context |> #invariants
 fun get_the_invariant context name = get_invariant context name |> the' (fn _ => "Unknown invariant " ^ name)
 fun get_hoare context name = Symtab.lookup (Hoare_Data.get context |> #hoares) name
 fun get_the_hoare context name = get_hoare context name |> the' (fn _ => "Unknown Hoare judgment " ^ name)
@@ -450,9 +453,26 @@ fun filter_OF (thms1:thm list) (thms2:thm list) : thm list =
 (* fun filter_inst ctxt (thms:thm list) var value : thm list =
   thms |> map_filter (fn thm' => SOME (Drule.infer_instantiate ctxt [(var,value)] thm') handle THM _ => NONE) *)
 
-fun current_invariant_tac thms ctxt = SUBGOAL (fn (_,i) => let
+(* Raises TERM or TYPE if not found *)
+fun get_invariant_from_implication' (ctxt:Proof.context) (logic:logic) (t:term) = let
+  val const = #invariant_implication_lhs logic t
+  val inv = case get_invariants (Context.Proof ctxt) |> Symtab.get_first 
+                   (fn (_,inv) => if #const inv = const then SOME inv else NONE)
+            of SOME inv => inv | NONE => raise TERM("get_invariant_from_implication'", [t,const])
+in inv end
+
+fun get_invariant_from_implication (ctxt:Proof.context) (t:term) = let
+  val inv = get_logics (Proof_Context.theory_of ctxt) |> Symtab.get_first
+    (fn (_,logic) => SOME (get_invariant_from_implication' ctxt logic t)
+        handle TERM _ => NONE | TYPE _ => NONE)
+  in inv |> the' (fn _ => "Could not identify invariant in the lhs of " ^ Syntax.string_of_term ctxt t) end
+
+fun current_invariant_tac thms ctxt = SUBGOAL (fn (t,i) => let
   val thms = thms ctxt
-  val inv = get_the_current_invariant ctxt
+  val inv = case get_current_invariant ctxt of SOME inv => inv
+              | NONE => let
+                  val t = HOLogic.dest_Trueprop (Logic.strip_assums_concl t) handle TERM(msg,Ts) => raise TERM("current_invariant_tac: "^msg,Ts)
+                  in get_invariant_from_implication ctxt t end
   (* val logic = #logic inv *)
   val inv_def = #def_thm inv
   val thms_inst = filter_OF thms [inv_def]  

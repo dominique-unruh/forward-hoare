@@ -333,6 +333,10 @@ structure Logic1 = Hoare_Logic(
       end
   end
   
+  fun invariant_implication_lhs (Const(\<^const_name>\<open>All\<close>,_) $ Abs(_,_, (Const(\<^const_name>\<open>All\<close>,_) $ Abs(_,_, Const(\<^const_name>\<open>implies\<close>,_) $ (inv $ _ $ _) $ _)))) = inv
+    | invariant_implication_lhs (Const(\<^const_name>\<open>All\<close>,_) $ Abs(_,_, Const(\<^const_name>\<open>implies\<close>,_) $ (inv $ _ ) $ _)) = inv
+    | invariant_implication_lhs t = raise TERM("invariant_implication_lhs", [t])
+
   fun invariant_parse_translation ctxt other_inv t =
     if is_rinvT (fastype_of other_inv)
     then tr_EXPR2_like HOLogic.boolT ctxt t

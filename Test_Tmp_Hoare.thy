@@ -127,8 +127,8 @@ hoare step1: range 1~1 pre start2 post step1 = default
 hoare' invariant_has step1x1: step1 \<rightarrow> "INV2[$x1=1] :: (memory,memory) rinvariant"
   apply updated by auto
 
-(*   have "{step1 \<Rightarrow> $x1=1}"
-    apply updated *)
+have "{step1 \<Rightarrow> $x1=1}"
+  apply updated by auto
 
 hoare' invariant_has step1x2: step1 \<rightarrow> "INV2[$x2=2] :: (memory,memory) rinvariant"
   apply updated by auto
