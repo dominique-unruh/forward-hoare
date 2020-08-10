@@ -160,6 +160,31 @@ fun tr_EXPR2_like T ctxt e =   let
     Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> dummyT --> T)
   end
 
+
+fun wp_tac ctxt = (* print_subgoal_tac ctxt "wp_tac" THEN' *) resolve_tac ctxt @{thms wp_Set_cons1 wp_Set_cons2 wp_skip12}
+
+fun DETERM' tac i = DETERM (tac i)
+
+val independence_split_tac_pattern =
+  Syntax.read_prop (\<^context> |> Proof_Context.set_mode Proof_Context.mode_pattern)
+        "independent_of (\<lambda>a b. b) _"
+
+fun independence_split_tac_test ctxt t =
+  (Pattern.match (Proof_Context.theory_of ctxt) 
+      (independence_split_tac_pattern, Logic.strip_assums_concl t) (Vartab.empty,Vartab.empty);
+   true) handle Pattern.MATCH => false
+
+fun independence_split_tac ctxt = match_tac ctxt @{thms independent_of_split}
+  THEN' SUBGOAL (fn (t,_) => if independence_split_tac_test ctxt t then no_tac else all_tac)
+
+fun independence_tac_step ctxt = DETERM' (match_tac ctxt (@{thms 
+  independent_of_const independent_of_var}
+     @ Named_Theorems.get ctxt \<^named_theorems>\<open>independence\<close>)
+  ORELSE' independence_split_tac ctxt)
+
+fun independence_tac ctxt = REPEAT_ALL_NEW (independence_tac_step ctxt)
+
+
 structure Logic1 = Hoare_Logic(
   val binding = \<^binding>\<open>tmp_hoare\<close>
   structure Utils = Forward_Hoare_Utils(val logic_name = Binding.name_of binding)
@@ -251,9 +276,13 @@ structure Logic1 = Hoare_Logic(
       in HOLogic.mk_prod (t1,t2) end
 
   val tilde = Parse.sym_ident :-- (fn "~" => Scan.succeed () | _ => Scan.fail) >> #1;
+  val emptyset = Parse.sym_ident :-- (fn "\<emptyset>" => Scan.succeed () | _ => Scan.fail) >> #1;
+
+  val index_list : int list parser =
+    Parse.list1 Parse.nat || (emptyset >> K [])
 
   fun read_range (options:options) _ : range context_parser = 
-    Scan.lift (Parse.list1 Parse.nat -- Scan.option (tilde |-- Parse.list1 Parse.nat))
+    Scan.lift (index_list -- Scan.option (tilde |-- index_list))
       >> (fn (indices,NONE) => Range (get_current_program_name (#util_options options), indices)
            | (indices1,SOME indices2) => Range2 (the_left_program options, indices1, the_right_program options, indices2))
 
@@ -341,6 +370,9 @@ structure Logic1 = Hoare_Logic(
     if is_rinvT (fastype_of other_inv)
     then tr_EXPR2_like HOLogic.boolT ctxt t
     else tr_EXPR_like HOLogic.boolT ctxt t
+
+ val subgoal_tactics = Symtab.make [("wp_tac",wp_tac),("independence_tac",independence_tac)]
+
 )
 
 (* structure Logic2 = Hoare_Logic(
@@ -449,6 +481,5 @@ structure Logic1 = Hoare_Logic(
   end
 )
  *)
-
 
 end

@@ -107,43 +107,47 @@ lemma [simp]:
 
 Hoare config (tmp_hoare) memory = memory
 
-Hoare program (tmp_hoare) left: \<open>PROG[x:=1; y:=nat; z:=$y ($x)]\<close>
-Hoare program (tmp_hoare) right: \<open>PROG[x:=2; y:=nat; z:=$y ($x) + 1]\<close>
-
-ML \<open>
-Forward_Hoare.Hoare_Data.get (Context.Proof \<^context>) |> #programs
-\<close>
+Hoare program (tmp_hoare) left:  \<open>PROG[x:=$x+1; z:=nat $x]\<close>
+Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat $x]\<close>
 
 Hoare config (tmp_hoare) left = left
 Hoare config (tmp_hoare) right = right
 
 lemma True proof
 
-hoare invariant (tmp_hoare) start2: "INV2[True] :: (memory, memory) rinvariant"
+  hoare invariant (tmp_hoare) start2: "INV2[$x1=$x2+1] :: (memory, memory) rinvariant"
 
-hoare step1: range 1~1 pre start2 post step1 = default
+  (* TODO should work *)
+  (* thm \<open>{start2 \<Rightarrow> $x1=$x2}\<close> *)
+
+  hoare step1L: range 1 ~ \<emptyset> pre start2 post step1L = default
+
+  have "{step1L \<Rightarrow> $x1=$x2+2}"
+    apply wp
+    using start2_inv_def by auto
+
+  hoare step1LR: range \<emptyset> ~ 1 pre step1L post step1LR = default
+
+  have "{step1LR \<Rightarrow> $x1=$x2}"
+    apply wp
+    using \<open>{step1L \<Rightarrow> $x1=$x2+2}\<close> 
+    by auto
+
+  hoare step2: range 2~2 pre step1LR post step2 = default
+
+  have "\<exists>A. \<forall>mem1 mem2. step2_inv mem1 mem2 \<longrightarrow> A mem1 mem2"
+    apply (rule exI)
+    using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> by untouched
+
+  have "{step2 \<Rightarrow> $x1=$x2}"
+    using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> by untouched
+
+  have "{step2 \<Rightarrow> $z1=$z2}"
+    apply wp
+    using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close>
+    by simp
 
 
-hoare' invariant_has step1x1: step1 \<rightarrow> "INV2[$x1=1] :: (memory,memory) rinvariant"
-  apply updated by auto
-
-have "{step1 \<Rightarrow> $x1=1}"
-  apply updated by auto
-
-hoare' invariant_has step1x2: step1 \<rightarrow> "INV2[$x2=2] :: (memory,memory) rinvariant"
-  apply updated by auto
-
-hoare' invariant_has step1x: step1 \<rightarrow> "INV2[$x1+1=$x2]"
-  using \<open>{step1 \<Rightarrow> $x1=1}\<close> \<open>{step1 \<Rightarrow> $x2=2}\<close>
-  by auto
-
-hoare step2: range 2~2 pre step1 post step2 = default
-
-hoare' invariant_has step2x1: step2 \<rightarrow> "INV2[$x1=1] :: (memory,memory) rinvariant"
-  using step1x1 apply untouched by auto
-
-term \<open>{step2 \<Rightarrow> $x1=1}\<close>
-thm step1x1
 
 qed
 

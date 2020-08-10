@@ -74,8 +74,6 @@ type logic = {
   pretty_range: Proof.context -> ex_range -> Pretty.T,
   invariant_typ: ex_options -> typ,
   check_invariant: Proof.context -> term -> unit,
-  (* read_invariant: Proof.context -> string -> term, *)
-  (* valid_range: term -> ex_range -> bool, *)
   extract_range: Proof.context -> ex_range -> term,
   hoare_thm: Proof.context -> term -> term -> term -> term,
   join_hoare: Proof.context -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
@@ -84,9 +82,9 @@ type logic = {
   invariant_implication_lhs: term -> term,
   invariant_implication_syntax: Proof.context -> term -> term -> term,
   invariant_parse_translation: Proof.context -> term -> term -> term,
-  (* program_morphism: morphism -> term -> term *)
   default_options: ex_options,
-  set_option: string -> string -> Proof.context -> morphism -> ex_options -> ex_options
+  set_option: string -> string -> Proof.context -> morphism -> ex_options -> ex_options,
+  subgoal_tactics: (Proof.context -> int -> tactic) Symtab.table
 }
 
 fun name_of_logic ({binding,...}:logic) = Binding.name_of binding
@@ -464,18 +462,29 @@ in inv end
 fun get_invariant_from_implication (ctxt:Proof.context) (t:term) = let
   val inv = get_logics (Proof_Context.theory_of ctxt) |> Symtab.get_first
     (fn (_,logic) => SOME (get_invariant_from_implication' ctxt logic t)
-        handle TERM _ => NONE | TYPE _ => NONE)
+        handle TERM _ => NONE | TYPE _ => NONE | Match => NONE)
   in inv |> the' (fn _ => "Could not identify invariant in the lhs of " ^ Syntax.string_of_term ctxt t) end
 
-fun current_invariant_tac thms ctxt = SUBGOAL (fn (t,i) => let
+
+fun auto_subgoal_tac (logic:logic) ctxt = SUBGOAL (fn (t,i) => case t of
+  Const(\<^const_name>\<open>SOLVE_WITH\<close>,_) $ str $ _ => let
+    val str = HOLogic.dest_literal str
+    val tac = case str of 
+                _ => case Symtab.lookup (#subgoal_tactics logic) str of
+                       SOME tac => tac ctxt
+                      | NONE => raise TERM("auto_subgoal_tac: unknown tactic "^str^" for logic "^string_of_binding_logic (#binding logic), [t])
+    in (resolve_tac ctxt @{thms remove_SOLVE_WITH} THEN' tac THEN_ALL_NEW auto_subgoal_tac logic ctxt) i end
+  | _ => all_tac)
+
+fun current_invariant_tac OFs thms ctxt = SUBGOAL (fn (t,i) => let
   val thms = thms ctxt
   val inv = case get_current_invariant ctxt of SOME inv => inv
               | NONE => let
                   val t = HOLogic.dest_Trueprop (Logic.strip_assums_concl t) handle TERM(msg,Ts) => raise TERM("current_invariant_tac: "^msg,Ts)
                   in get_invariant_from_implication ctxt t end
-  (* val logic = #logic inv *)
+  val logic = #logic inv |> get_the_logic' ctxt
   val inv_def = #def_thm inv
-  val thms_inst = filter_OF thms [inv_def]  
+  val thms_inst = filter_OF thms (inv_def :: OFs)
   val inv_markup_name = #binding inv |> string_of_binding_invariant
   val _ = if null thms_inst 
           then error ("No rules found that match invariant " ^ inv_markup_name) else ()
@@ -483,14 +492,21 @@ fun current_invariant_tac thms ctxt = SUBGOAL (fn (t,i) => let
               map (Pretty.item o single o Syntax.pretty_term ctxt o Thm.prop_of) thms_inst)
           |> Pretty.block |> Pretty.string_of |> tracing
   in
-    resolve_tac ctxt thms_inst i
-(*     THEN'
-    solve_tac ctxt [inv_def] *)
+    (resolve_tac ctxt thms_inst
+     THEN_ALL_NEW
+     auto_subgoal_tac logic ctxt) i
   end)
 
-val invariant_untouched_tac = current_invariant_tac (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_untouched\<close>)
-val invariant_updated_tac = current_invariant_tac (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>)
-val invariant_wp_tac = current_invariant_tac (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_wp\<close>)
+(* The SUBGOAL is to avoid that error_tac already throws an error when run on the dummy fact _ *)
+fun error_tac msg = SUBGOAL (fn _ => error (msg ())) 1
+
+fun invariant_untouched_tac ctxt previous = current_invariant_tac [previous] (fn _ => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_untouched\<close>) ctxt
+fun invariant_untouched_method ctxt = METHOD (
+      fn [fact] => invariant_untouched_tac ctxt fact 1
+       | facts => error_tac (fn _ => "untouched method expects exactly one fact (the previous invariant implication), not " ^ string_of_int (length facts)))
+
+val invariant_updated_tac = current_invariant_tac [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>)
+val invariant_wp_tac = current_invariant_tac [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_wp\<close>)
 
 val _ = Theory.setup
   (Attrib.setup \<^binding>\<open>current_invariant_def\<close> 
@@ -532,6 +548,7 @@ fun invariant_implication_tr ctxt [inv1_var,inv2] = let
 (* val _ = impl_raw |> Syntax.string_of_term ctxt |> writeln *)
   in impl end
   | invariant_implication_tr _ ts = raise TERM("invariant_implication_tr", ts)
+
 
 (** Isar command **)
 

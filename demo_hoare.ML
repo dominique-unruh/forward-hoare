@@ -50,6 +50,8 @@ structure Demo_Hoare_Logic = Hoare_Logic(
   fun invariant_implication _ (t1:term) (t2:term) = 
     \<^const>\<open>pc_imp\<close> $ t1 $ t2
 
+  fun invariant_implication_lhs (Const(\<^const_name>\<open>pc_imp\<close>,_) $ t1 $ _) = t1
+
   fun extract_range ctxt ((program,start,endd):range) : term =
     get_my_program ctxt program |> HOLogic.dest_list |> drop start |> take (endd-start) |> HOLogic.mk_list \<^typ>\<open>instruction\<close>
 

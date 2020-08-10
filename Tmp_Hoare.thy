@@ -355,8 +355,8 @@ lemma postcondition_default2_valid:
   sorry
 
 definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
-abbreviation (input) "independentL_of e x \<equiv> (\<forall>m2. independent_of (\<lambda>m1. e m1 m2) x)"
-abbreviation (input) "independentR_of e x \<equiv> (\<forall>m1. independent_of (\<lambda>m2. e m1 m2) x)"
+abbreviation (input) "independentL_of e x \<equiv> (\<And>m2. independent_of (\<lambda>m1. e m1 m2) x)"
+abbreviation (input) "independentR_of e x \<equiv> (\<And>m1. independent_of (\<lambda>m2. e m1 m2) x)"
 
 
 (* axiomatization independent_of :: "('mem \<Rightarrow> 'a) \<Rightarrow> ('mem,'b) var \<Rightarrow> bool" *)
@@ -438,11 +438,11 @@ fun infer ctxt ts =
 
 named_theorems independence
 
-lemma independent_of_const[simp, independence]:
+lemma independent_of_const[simp]:
   shows "independent_of (\<lambda>m. a) x"
   unfolding independent_of_def by simp
 
-lemma independent_of_split[independence, intro]:
+lemma independent_of_split[intro]:
   assumes "independent_of a x"
   assumes "independent_of b x"
   shows "independent_of (\<lambda>m. (a m) (b m)) x"
@@ -478,7 +478,7 @@ next
     by (auto simp: update_var_invalid valid_var_def)
 qed
 
-lemma independent_of_var[independence, intro]:
+lemma independent_of_var[intro]:
   fixes x :: "('mem,'x) var" and y :: "('mem,'y) var"
   assumes "independent_vars x y"
   shows "independent_of (\<lambda>m. eval_var x m) y"
@@ -549,48 +549,99 @@ lemma wp[hoare_wp add]:
   shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp unfolding assms(1) postcondition_default_def by auto
 
+lemma wp_Set1[hoare_wp add]:
+  fixes x :: "('mem,'val) var"
+  assumes "invariant \<equiv> postcondition_default2 ([Set x e],[]) A"
+  assumes imp: "\<And>m1 m2. A m1 m2 \<Longrightarrow> B (update_var x (e m1) m1) m2"
+  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
+  using imp unfolding assms(1) postcondition_default2_def by auto
+
+lemma wp_Set2[hoare_wp add]:
+  fixes x :: "('mem,'val) var"
+  assumes "invariant \<equiv> postcondition_default2 ([],[Set x e]) A"
+  assumes imp: "\<And>m1 m2. A m1 m2 \<Longrightarrow> B m1 (update_var x (e m2) m2)"
+  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
+  using imp unfolding assms(1) postcondition_default2_def by auto
+
+
+lemma wp_generic[hoare_wp add]:
+  fixes x :: "('mem,'val) var"
+  assumes "invariant \<equiv> postcondition_default2 (p1,p2) A"
+  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> A' m1 m2"
+  assumes "PROP SOLVE_WITH STR ''wp_tac''
+                (Trueprop (\<forall>m1 m2. postcondition_default2 (p1,p2) A' m1 m2 \<longrightarrow> B m1 m2))"
+  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
+  using assms(2,3) unfolding assms(1) SOLVE_WITH_def postcondition_default2_def 
+  apply auto by metis
+
+lemma remove_SOLVE_WITH: "PROP P \<Longrightarrow> PROP SOLVE_WITH s PROP P"
+  unfolding SOLVE_WITH_def by auto
+
+lemma wp_Set_cons1:
+  assumes "PROP SOLVE_WITH STR ''wp_tac'' (Trueprop (\<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2))"
+  shows "\<forall>mem1 mem2. postcondition_default2 (Set x e # p1, p2) (\<lambda>m1 m2. M (update_var x (e m1) m1) m2) mem1 mem2 \<longrightarrow> B mem1 mem2"
+  using assms unfolding SOLVE_WITH_def postcondition_default2_def
+  by auto
+
+lemma wp_Set_cons2:
+  assumes "PROP SOLVE_WITH STR ''wp_tac'' (Trueprop (\<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2))"
+  shows "\<forall>mem1 mem2. postcondition_default2 (p1, Set x e # p2) (\<lambda>m1 m2. M m1 (update_var x (e m2) m2)) mem1 mem2 \<longrightarrow> B mem1 mem2"
+  using assms unfolding SOLVE_WITH_def postcondition_default2_def
+  by auto
+
+lemma wp_skip12:
+  shows "\<forall>mem1 mem2. postcondition_default2 ([], []) B mem1 mem2 \<longrightarrow> B mem1 mem2"
+  unfolding SOLVE_WITH_def postcondition_default2_def
+  by auto
+
+ML \<open>
+(* fun print_subgoal_tac ctxt caption = SUBGOAL (fn (t,i) => (tracing (caption ^ ": " ^ Syntax.string_of_term ctxt t); all_tac)) *)
+
+\<close>
+
+
 lemma untouched[hoare_untouched add]: 
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
-  assumes indep: "independent_of B x"
-  assumes imp: "\<And>m. A m \<Longrightarrow> B m"
+  assumes imp: "\<forall>m. A m \<longrightarrow> B m"
+  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
   shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
-  by (auto simp: semantics1_Set_invalid)
+  by (auto simp: SOLVE_WITH_def semantics1_Set_invalid)
 
 lemma untouchedLR[hoare_untouched add]: 
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 ([Set x e],[Set x' e']) A"
-  assumes indepL: "independentL_of B x"
-  assumes indepR: "independentR_of B x'"
-  assumes imp: "\<And>m1 m2. A m1 m2 \<Longrightarrow> B m1 m2"
+  assumes imp: "\<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
+  assumes indepL: "PROP SOLVE_WITH STR ''independence_tac'' (PROP independentL_of B x)"
+  assumes indepR: "PROP SOLVE_WITH STR ''independence_tac'' (PROP independentR_of B x')"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
   using imp indepL indepR unfolding assms(1) postcondition_default2_def independent_of_def 
-  by (auto simp: semantics1_Set_invalid)
+  by (auto simp: SOLVE_WITH_def semantics1_Set_invalid)
 
 lemma updated[hoare_updated add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
-  assumes indep: "independent_of e x"
+  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of e x))"
   shows "\<forall>m. invariant m \<longrightarrow> eval_var x m = e m"
-  using assms unfolding assms postcondition_default_def independent_of_def by auto
+  using assms unfolding SOLVE_WITH_def assms postcondition_default_def independent_of_def by auto
 
 lemma updatedL[hoare_updated add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 ([Set x e], p) A"
   assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
-  assumes indep: "independent_of e x"
+  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of e x))"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m1 = e m1"
-  using assms unfolding assms postcondition_default2_def independent_of_def by auto
+  using assms unfolding SOLVE_WITH_def assms postcondition_default2_def independent_of_def by auto
 
 lemma updatedR[hoare_updated add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 (p, [Set x e]) A"
   assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
-  assumes indep: "independent_of e x"
+  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of e x))"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m2 = e m2"
-  using assms unfolding assms postcondition_default2_def independent_of_def by auto
+  using assms unfolding SOLVE_WITH_def assms postcondition_default2_def independent_of_def by auto
 
 subsection \<open>Concrete syntax for programs\<close>
 
@@ -598,7 +649,7 @@ syntax "_expression_tmp_hoare" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
 syntax "_invariant_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV[_]")
 syntax "_invariant2_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV2[_]")
 hide_type (open) id
-syntax "_variable_tmp_hoare" :: "id \<Rightarrow> 'a" ("$_")
+syntax "_variable_tmp_hoare" :: "id \<Rightarrow> 'a" ("$_" 1000)
 
 ML_file \<open>tmp_hoare.ML\<close>
 
@@ -621,26 +672,6 @@ syntax "_instruction_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> '
 
 translations "_instruction_tmp_hoare (_instruction_set_tmp_hoare x e)" 
           \<rightharpoonup> "CONST Set x (_expression_tmp_hoare e)"
-
-(* parse_translation \<open>[
-("_string_of_identifier", fn ctxt => fn [Free(n,_)] => HOLogic.mk_literal n)]\<close> *)
-
-(* ML \<open>
-fun dest_bit_syntax (Const(\<^const_syntax>\<open>False\<close>,_)) = 0
-  | dest_bit_syntax (Const(\<^const_syntax>\<open>True\<close>,_)) = 1
-  | dest_bit_syntax _ = raise TERM ("dest_bit_syntax", []);
-
-val dest_bits_syntax = Integer.eval_radix 2 o map dest_bit_syntax;
-
-val dest_literal_syntax =
-  let
-    fun dest (Const (\<^const_syntax>\<open>Groups.zero_class.zero\<close>, _)) = []
-      | dest (Const (\<^const_syntax>\<open>String.empty_literal\<close>, _)) = []
-      | dest (Const (\<^const_syntax>\<open>String.Literal\<close>, _) $ b0 $ b1 $ b2 $ b3 $ b4 $ b5 $ b6 $ t) =
-          chr (dest_bits_syntax [b0, b1, b2, b3, b4, b5, b6]) :: dest t
-      | dest t = raise TERM ("dest_literal_syntax", [t]);
-  in implode o dest end;
-\<close> *)
 
 
 print_translation \<open>[

@@ -26,5 +26,7 @@ fun get_my_program ctxt name = let
 
 fun invariant_parse_translation _ _ t = t
 
+val subgoal_tactics: (Proof.context -> int -> tactic) Symtab.table = Symtab.empty
+
 end
 end

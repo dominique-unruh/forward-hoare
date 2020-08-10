@@ -14,18 +14,22 @@ named_theorems hoare_untouched
 named_theorems hoare_updated
 named_theorems hoare_wp
 
+definition SOLVE_WITH :: "String.literal \<Rightarrow> prop \<Rightarrow> prop" where "SOLVE_WITH _ == \<lambda>x. x"
+lemma remove_SOLVE_WITH: "PROP P \<Longrightarrow> PROP SOLVE_WITH s PROP P"
+  unfolding SOLVE_WITH_def by auto
+
 ML_file "forward_hoare.ML"
 ML_file "forward_hoare_utils.ML"
 ML_file "hoare_logic.ML"
 
 
 method_setup untouched =
-  \<open>Scan.succeed (fn ctxt => SIMPLE_METHOD' (Forward_Hoare.invariant_untouched_tac ctxt))\<close> 
+  \<open>Scan.succeed (Forward_Hoare.invariant_untouched_method)\<close> 
   "Invariant is preserved"
 
 method_setup updated =
   \<open>Scan.succeed (fn ctxt => SIMPLE_METHOD' (Forward_Hoare.invariant_updated_tac ctxt))\<close> 
-  "Variable is update"
+  "Variable is updated"
 
 method_setup wp =
   \<open>Scan.succeed (fn ctxt => SIMPLE_METHOD' (Forward_Hoare.invariant_wp_tac ctxt))\<close> 

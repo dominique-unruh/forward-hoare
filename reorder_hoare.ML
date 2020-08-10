@@ -155,6 +155,9 @@ structure Logic = Hoare_Logic(
   fun invariant_implication _ inv1 inv2 =
     HOLogic.all_const \<^typ>\<open>mem\<close> $ Abs("mem",\<^typ>\<open>mem\<close>, 
       HOLogic.mk_imp (inv1 $ Bound 0, inv2 $ Bound 0))
+
+  fun invariant_implication_lhs (Const(\<^const_name>\<open>All\<close>,_) $ Abs(_,_, Const(\<^const_name>\<open>implies\<close>,_) $ (inv1 $ _) $ _)) = inv1
+
 )
 
 
