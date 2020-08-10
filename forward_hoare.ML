@@ -1,6 +1,13 @@
 structure Forward_Hoare =
 struct
 
+fun string_of_fact_ref (r as Facts.Named _) = Facts.string_of_ref r
+  | string_of_fact_ref (Facts.Fact str) = enclose "\<open>" "\<close>" str
+
+fun string_of_fact_ref_attr ctxt (r,attr) =
+  string_of_fact_ref r ^
+  (Attrib.pretty_attribs ctxt attr |> Pretty.block |> Pretty.string_of)
+
 type 'a toolkit = {
   define: binding -> binding -> term -> 'a -> (term*thm*'a),
   declaration: declaration -> 'a -> 'a,
@@ -455,10 +462,12 @@ fun filter_OF (thms1:thm list) (thms2:thm list) : thm list =
 fun get_invariant_from_implication' (ctxt:Proof.context) (logic:logic) (t:term) = let
   val const = #invariant_implication_lhs logic t
   val inv = case get_invariants (Context.Proof ctxt) |> Symtab.get_first 
+(* TODO: discard invariants from a different logic *)
                    (fn (_,inv) => if #const inv = const then SOME inv else NONE)
             of SOME inv => inv | NONE => raise TERM("get_invariant_from_implication'", [t,const])
 in inv end
 
+(* TODO: rewrite: we don't need to loop over logics separately since invariants carry the logic *)
 fun get_invariant_from_implication (ctxt:Proof.context) (t:term) = let
   val inv = get_logics (Proof_Context.theory_of ctxt) |> Symtab.get_first
     (fn (_,logic) => SOME (get_invariant_from_implication' ctxt logic t)
@@ -510,6 +519,7 @@ fun invariant_untouched_method ctxt = METHOD (
 val invariant_updated_tac = current_invariant_tac false [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>)
 val invariant_wp_tac = current_invariant_tac false [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_wp\<close>)
 
+
 val _ = Theory.setup
   (Attrib.setup \<^binding>\<open>current_invariant_def\<close> 
   (Scan.succeed (Thm.rule_attribute [] (fn context => fn _ =>
@@ -517,6 +527,30 @@ val _ = Theory.setup
       NONE => Drule.dummy_thm
     | SOME thm => thm)))
     "[[current_invariant_def]] gives the definition of the currently investigated invariant)")
+
+
+fun preserve_invariant_implication ctxt implication (new_invariant:invariant) = let
+  val ii1 = implication
+  val logic = #logic new_invariant |> get_the_logic' ctxt
+  val inv2 = new_invariant |> #const
+  val ii2 = #invariant_implication_syntax logic ctxt inv2 (Var(("inv2",0),dummyT))
+            |> Syntax.check_term (Proof_Context.set_mode Proof_Context.mode_schematic ctxt)
+            |> HOLogic.mk_Trueprop
+  fun tac {context,...} = invariant_untouched_tac context false ii1 1
+  in Goal.prove ctxt [] [] ii2 tac end
+
+fun preserve_command (toolkit:'a toolkit) invs (in_inv:string) (state:'a) = let
+  val ctxt = #context toolkit state |> Context.proof_of
+  fun one (binding, thm_ref) state = let
+    val thm_ref_str = string_of_fact_ref_attr ctxt thm_ref
+    val _ = tracing ("Processing " ^ thm_ref_str)
+    val thm = case Attrib.eval_thms ctxt [thm_ref] of [thm] => thm
+                | _ => error ("Fact "^thm_ref_str^" consists of more than one theorem")
+    val inv2 = get_the_invariant (Context.Proof ctxt) in_inv
+    val ii2 = preserve_invariant_implication ctxt thm inv2
+    val state = #note toolkit binding ii2 state
+  in state end
+in fold one invs state end
 
 (* Adapted from syntax_phases.ML *)
 fun mark_atoms tm =
@@ -552,6 +586,7 @@ fun invariant_implication_tr ctxt [inv1_var,inv2] = let
   | invariant_implication_tr _ ts = raise TERM("invariant_implication_tr", ts)
 
 
+
 (** Isar command **)
 
 val binding_parser = Parse.binding --| Args.$$$ ":"
@@ -584,17 +619,17 @@ val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>invariant'\<close> "
     (declare_invariant_parser >> (fn ((logic,name),content) => 
         (define_invariant_command lthy_toolkit logic name content))) *)
 
-  val name_parser = Parse.binding --| Parse.$$$ ":"
-  (* TODO: parse program name *)
-  val extends_parser = Args.$$$ "extends" |-- Parse.name |> Scan.option
-  val range_parser = Args.$$$ "range" |-- tokens_parser
-    (Token.keyword_with (fn x => x="pre" orelse x="post"))
-  val pre_parser = Args.$$$ "pre" |-- Parse.name |> Scan.option
-  val make_post_parser = Parse.name -- tokens_parser (K false)
-  val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- make_post_parser
-  fun hoare_triple_parser toolkit = name_parser -- extends_parser -- range_parser -- pre_parser -- post_parser
-    >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
-          (hoare_command toolkit name extends range pre post make_post make_post_args))
+val name_parser = Parse.binding --| Parse.$$$ ":"
+(* TODO: parse program name *)
+val extends_parser = Args.$$$ "extends" |-- Parse.name |> Scan.option
+val range_parser = Args.$$$ "range" |-- tokens_parser
+  (Token.keyword_with (fn x => x="pre" orelse x="post"))
+val pre_parser = Args.$$$ "pre" |-- Parse.name |> Scan.option
+val make_post_parser = Parse.name -- tokens_parser (K false)
+val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- make_post_parser
+fun hoare_triple_parser toolkit = name_parser -- extends_parser -- range_parser -- pre_parser -- post_parser
+  >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
+        (hoare_command toolkit name extends range pre post make_post make_post_args))
 
 
 fun no_proof_obligation (toolkit:'a toolkit) (command:'a->Proof.state) st = let
@@ -611,6 +646,10 @@ fun dummy_proof_obligation (toolkit:'a toolkit) (command:'a->'a) st = let
 in state end
 
 
+fun preserve_command_parser toolkit = 
+  (Parse.and_list1 (Scan.optional (Parse.binding --| Args.colon) Binding.empty -- Parse.thm)
+       -- (Parse.$$$ "in" |-- Parse.name))
+  >> (fn (impls,in_inv) => preserve_command toolkit impls in_inv)
 
 (* TODO: add cuts and groups as needed *)
 fun command_parser_no_proof toolkit = 
@@ -618,6 +657,7 @@ fun command_parser_no_proof toolkit =
   (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit >> no_proof_obligation toolkit) ||
   (Args.$$$ "config" |-- config_parser toolkit) ||
   (Args.$$$ "invariant" |-- declare_invariant_parser toolkit) ||
+  (Args.$$$ "preserve" |-- preserve_command_parser toolkit) ||
   (hoare_triple_parser toolkit >> no_proof_obligation toolkit)
 
 fun command_parser_proof toolkit = 
@@ -625,6 +665,7 @@ fun command_parser_proof toolkit =
   (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit) ||
   (Args.$$$ "config" |-- config_parser toolkit >> dummy_proof_obligation toolkit) ||
   (Args.$$$ "invariant" |-- declare_invariant_parser toolkit >> dummy_proof_obligation toolkit) ||
+  (Args.$$$ "preserve" |-- preserve_command_parser toolkit >> dummy_proof_obligation toolkit) ||
   (hoare_triple_parser toolkit)
 
 val _ = Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "Run a Hoare logic command (without proof obligation)"

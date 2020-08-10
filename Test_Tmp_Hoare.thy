@@ -107,20 +107,28 @@ lemma [simp]:
 
 Hoare config (tmp_hoare) memory = memory
 
-Hoare program (tmp_hoare) left:  \<open>PROG[x:=$x+1; z:=nat $x]\<close>
-Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat $x]\<close>
+Hoare program (tmp_hoare) left:  \<open>PROG[x:=$x+1; z:=nat ($x)]\<close>
+Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat ($x)]\<close>
 
 Hoare config (tmp_hoare) left = left
 Hoare config (tmp_hoare) right = right
 
 lemma True proof
 
-  hoare invariant (tmp_hoare) start2: "INV2[$x1=$x2+1] :: (memory, memory) rinvariant"
+  hoare invariant (tmp_hoare) start2: "INV2[$x1=$x2+1 \<and> $z1=$z2] :: (memory, memory) rinvariant"
+
+  have "{start2 \<Rightarrow> $z1=$z2}"
+    unfolding start2_inv_def by simp
 
   (* TODO should work *)
   (* thm \<open>{start2 \<Rightarrow> $x1=$x2}\<close> *)
 
   hoare step1L: range 1 ~ \<emptyset> pre start2 post step1L = default
+
+  have \<open>{step1L \<Rightarrow> $z1=$z2}\<close>
+    using \<open>{start2 \<Rightarrow> $z1=$z2}\<close> apply wp by auto
+
+  (* have \<open>{start2 \<Rightarrow> $z1=$z2}\<close> in step1L *)
 
   have "{step1L \<Rightarrow> $x1=$x2+2}"
     apply wp
@@ -128,16 +136,17 @@ lemma True proof
 
   hoare step1LR: range \<emptyset> ~ 1 pre step1L post step1LR = default
 
-  have "{step1LR \<Rightarrow> $x1=$x2}"
+  have bla: "{step1LR \<Rightarrow> $x1=$x2}"
     apply wp
     using \<open>{step1L \<Rightarrow> $x1=$x2+2}\<close> 
     by auto
 
+  have \<open>{step1LR \<Rightarrow> $z1=$z2}\<close>
+    using \<open>{step1L \<Rightarrow> $z1=$z2}\<close> apply wp by auto
+
   hoare step2: range 2~2 pre step1LR post step2 = default
 
-  have "\<exists>A. \<forall>mem1 mem2. step2_inv mem1 mem2 \<longrightarrow> A mem1 mem2"
-    apply (rule exI)
-    using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> by untouched
+  hoare preserve bla: \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> in step2
 
   have "{step2 \<Rightarrow> $x1=$x2}"
     using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> by untouched
@@ -146,8 +155,6 @@ lemma True proof
     apply wp
     using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close>
     by simp
-
-
 
 qed
 
