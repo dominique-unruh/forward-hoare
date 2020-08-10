@@ -15,6 +15,7 @@ named_theorems hoare_updated
 named_theorems hoare_wp
 
 definition SOLVE_WITH :: "String.literal \<Rightarrow> prop \<Rightarrow> prop" where "SOLVE_WITH _ == \<lambda>x. x"
+declare SOLVE_WITH_def[simp]
 lemma remove_SOLVE_WITH: "PROP P \<Longrightarrow> PROP SOLVE_WITH s PROP P"
   unfolding SOLVE_WITH_def by auto
 

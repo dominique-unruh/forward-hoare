@@ -33,7 +33,7 @@ val invariant_parse_translation: Proof.context -> term -> term -> term
 val default_options: options
 (* set_option name content ctxt m options *)
 val set_option: string -> string -> Proof.context -> morphism -> options -> options
-val subgoal_tactics: (Proof.context -> int -> tactic) Symtab.table
+val subgoal_tactics: (string * (Proof.context -> int -> tactic)) list
 end
 
 signature HOARE_LOGIC =
@@ -134,7 +134,7 @@ val logic : logic = {
   invariant_implication_lhs = Logic.invariant_implication_lhs,
   default_options = default_options,
   set_option = set_option,
-  subgoal_tactics = Logic.subgoal_tactics
+  subgoal_tactics = Symtab.make Logic.subgoal_tactics
 }
 
 val _ = Context.>> (Context.map_theory (Logic_Data.map (Symtab.update_new (Binding.name_of Logic.binding, logic))))

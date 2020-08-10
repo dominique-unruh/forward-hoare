@@ -466,17 +466,19 @@ fun get_invariant_from_implication (ctxt:Proof.context) (t:term) = let
   in inv |> the' (fn _ => "Could not identify invariant in the lhs of " ^ Syntax.string_of_term ctxt t) end
 
 
-fun auto_subgoal_tac (logic:logic) ctxt = SUBGOAL (fn (t,i) => case t of
+fun auto_subgoal_tac lenient (logic:logic) ctxt = SUBGOAL (fn (t,i) => case t of
   Const(\<^const_name>\<open>SOLVE_WITH\<close>,_) $ str $ _ => let
     val str = HOLogic.dest_literal str
     val tac = case str of 
                 _ => case Symtab.lookup (#subgoal_tactics logic) str of
                        SOME tac => tac ctxt
                       | NONE => raise TERM("auto_subgoal_tac: unknown tactic "^str^" for logic "^string_of_binding_logic (#binding logic), [t])
-    in (resolve_tac ctxt @{thms remove_SOLVE_WITH} THEN' tac THEN_ALL_NEW auto_subgoal_tac logic ctxt) i end
+    val try = if lenient then fn tac => fn i => TRY (tac i) else I
+    in (resolve_tac ctxt @{thms remove_SOLVE_WITH} THEN' 
+        try (tac THEN_ALL_NEW auto_subgoal_tac lenient logic ctxt)) i end
   | _ => all_tac)
 
-fun current_invariant_tac OFs thms ctxt = SUBGOAL (fn (t,i) => let
+fun current_invariant_tac lenient OFs thms ctxt = SUBGOAL (fn (t,i) => let
   val thms = thms ctxt
   val inv = case get_current_invariant ctxt of SOME inv => inv
               | NONE => let
@@ -494,19 +496,19 @@ fun current_invariant_tac OFs thms ctxt = SUBGOAL (fn (t,i) => let
   in
     (resolve_tac ctxt thms_inst
      THEN_ALL_NEW
-     auto_subgoal_tac logic ctxt) i
+     auto_subgoal_tac lenient logic ctxt) i
   end)
 
 (* The SUBGOAL is to avoid that error_tac already throws an error when run on the dummy fact _ *)
 fun error_tac msg = SUBGOAL (fn _ => error (msg ())) 1
 
-fun invariant_untouched_tac ctxt previous = current_invariant_tac [previous] (fn _ => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_untouched\<close>) ctxt
+fun invariant_untouched_tac ctxt lenient previous = current_invariant_tac lenient [previous] (fn _ => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_untouched\<close>) ctxt
 fun invariant_untouched_method ctxt = METHOD (
-      fn [fact] => invariant_untouched_tac ctxt fact 1
+      fn [fact] => invariant_untouched_tac ctxt false fact 1
        | facts => error_tac (fn _ => "untouched method expects exactly one fact (the previous invariant implication), not " ^ string_of_int (length facts)))
 
-val invariant_updated_tac = current_invariant_tac [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>)
-val invariant_wp_tac = current_invariant_tac [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_wp\<close>)
+val invariant_updated_tac = current_invariant_tac false [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>)
+val invariant_wp_tac = current_invariant_tac false [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_wp\<close>)
 
 val _ = Theory.setup
   (Attrib.setup \<^binding>\<open>current_invariant_def\<close> 

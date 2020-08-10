@@ -16,6 +16,9 @@ datatype instruction = Add of var*var | Set of var*int | Guess of var
     | term_to_instruction t = raise TERM("term_to_instruction",[t])
   fun term_to_program t = HOLogic.dest_list t |> map term_to_instruction
 
+fun independence_tac ctxt = 
+  (resolve_tac ctxt @{thms independent_ofI filter_literal_neq} THEN' SOLVED' (asm_simp_tac ctxt))
+
 structure Demo_Hoare_Logic = Hoare_Logic(
   val binding = \<^binding>\<open>demo_logic\<close>
   structure Utils = Forward_Hoare_Utils(val logic_name = Binding.name_of binding)
@@ -109,6 +112,9 @@ structure Demo_Hoare_Logic = Hoare_Logic(
               |> Goal.finish ctxt
     val r = (prog12,l1,l4)
     in (r,thm) end
+
+ val subgoal_tactics = [("independence_tac",independence_tac)]
+
 )
 
 val ex_range = Demo_Hoare_Logic.ex_range

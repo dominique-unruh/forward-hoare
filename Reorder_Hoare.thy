@@ -42,6 +42,11 @@ lemma independent_ofI[intro]:
   shows "independent_of B x"
   unfolding independent_of_def using assms by metis
 
+lemma filter_literal_neq:
+  assumes "String.Literal b0 b1 b2 b3 b4 b5 b6 cs \<noteq> String.Literal b0' b1' b2' b3' b4' b5' b6' cs'"
+  shows "String.Literal b0 b1 b2 b3 b4 b5 b6 cs \<noteq> String.Literal b0' b1' b2' b3' b4' b5' b6' cs'"
+  using assms by -
+
 definition "instructions_commute a b \<longleftrightarrow> semantics [a,b] = semantics [b,a]"
 
 
@@ -158,10 +163,10 @@ lemma wp[hoare_wp add]:
   shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp unfolding assms(1) postcondition_default_def by auto
 
-lemma untouched[hoare_untouched add]: 
+lemma untouched[hoare_untouched add]:
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
-  assumes indep: "independent_of B x"
-  assumes imp: "\<And>m. A m \<Longrightarrow> B m"
+  assumes imp: "\<forall>m. A m \<longrightarrow> B m"
+  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
   shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
   apply auto

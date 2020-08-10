@@ -30,7 +30,7 @@ proof  -
 
   from step1_x5
   hoare' invariant_has step2_x5: step2 \<rightarrow> "\<lambda>m. m STR ''x'' = 5"
-    apply untouched by auto
+    by untouched
 
   hoare' invariant_has step2_y5: step2 \<rightarrow> "\<lambda>m. m STR ''y'' = -5"
     by updated
@@ -42,7 +42,7 @@ proof  -
 
   from step2_y5
   hoare' invariant_has step3_y5: step3 \<rightarrow> "\<lambda>m. m STR ''y'' = -5"
-    apply untouched by auto
+    by untouched
 
   from step2_x5 step2_y5
   hoare' invariant_has step3_x0: step3 \<rightarrow> "\<lambda>m. m STR ''x'' = 0"

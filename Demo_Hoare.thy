@@ -212,6 +212,15 @@ lemma independent_ofI[intro]:
   shows "independent_of B x"
   unfolding independent_of_def using assms by metis
 
+ML \<open>
+\<^term>\<open>STR ''xx''\<close>
+\<close>
+
+lemma filter_literal_neq:
+  assumes "String.Literal b0 b1 b2 b3 b4 b5 b6 cs \<noteq> String.Literal b0' b1' b2' b3' b4' b5' b6' cs'"
+  shows "String.Literal b0 b1 b2 b3 b4 b5 b6 cs \<noteq> String.Literal b0' b1' b2' b3' b4' b5' b6' cs'"
+  using assms by -
+
 lemma newvalue_Set[hoare_updated add]:
   assumes "invariant \<equiv> postcondition_trivial (Set x i) A"
   shows "pc_imp invariant (\<lambda>m. m x = i)"
@@ -224,50 +233,45 @@ lemma newvalue_Guess[hoare_updated add]:
   unfolding assms
   by (rule pc_impI; simp)
 
-(* lemmas newvalue = newvalue_Set newvalue_Guess *)
-
 lemma unchanged_Guess_trivial[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Guess x) A"
-  assumes indep: "independent_of B x"
-  assumes imp: "\<And>m. A m \<Longrightarrow> B m"
+  assumes imp: "pc_imp A B"
+  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
   shows "pc_imp invariant B"
-  unfolding assms(1)
-  apply (rule pc_impI; simp)
-  using indep imp unfolding independent_of_def apply auto
-  by (metis fun_upd_def)+
+  using assms
+  unfolding assms(2) SOLVE_WITH_def independent_of_def pc_imp_def
+  apply auto by (metis fun_upd_def)
 
 lemma unchanged_Guess_pick[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_pick (Guess x) i A"
-  assumes indep: "independent_of B x"
-  assumes imp: "\<And>m. A m \<Longrightarrow> B m"
+  assumes imp: "pc_imp A B"
+  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
   shows "pc_imp invariant B"
-  unfolding assms(1)
-  apply (rule pc_impI; simp)
-  using indep imp unfolding independent_of_def apply auto
-  by (metis fun_upd_def)+
+  using assms
+  unfolding assms(2) SOLVE_WITH_def independent_of_def pc_imp_def
+  apply auto
+  by (metis (no_types, lifting) fun_upd_def)
 
 lemma unchanged_Add[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Add x y) A"
-  assumes indep: "independent_of B x"
-  assumes xy: "x \<noteq> y"
-  assumes imp: "\<And>m. A m \<Longrightarrow> B m"
+  assumes imp: "pc_imp A B"
+  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
+  assumes xy: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (x \<noteq> y))"
   shows "pc_imp invariant B"
-  unfolding assms
-  apply (rule pc_impI)
-  using indep imp xy unfolding independent_of_def apply auto
-  by (metis fun_upd_def)
+  using assms
+  unfolding assms(2) SOLVE_WITH_def independent_of_def pc_imp_def
+  apply auto
+  by (metis (no_types, lifting) fun_upd_def)
 
 lemma unchanged_Set[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Set x i) A"
-  assumes indep: "independent_of B x"
-  assumes imp: "\<And>m. A m \<Longrightarrow> B m"
+  assumes imp: "pc_imp A B"
+  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
   shows "pc_imp invariant B"
-  unfolding assms(1)
-  apply (rule pc_impI)
-  using indep imp unfolding independent_of_def apply auto
-  by (metis fun_upd_def)
-
-(* lemmas unchanged = unchanged_Guess_pick unchanged_Guess_trivial unchanged_Add unchanged_Set *)
+  using assms
+  unfolding assms(2) SOLVE_WITH_def independent_of_def pc_imp_def
+  apply auto
+  by (metis (no_types, lifting) fun_upd_def)
 
 lemma wp_Add[hoare_wp add]: 
   assumes "invariant \<equiv> postcondition_trivial (Add x y) A"

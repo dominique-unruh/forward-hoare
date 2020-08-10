@@ -82,6 +82,9 @@ fun sort_program _ ([],prog) = ([],prog,@{thm sort_program_empty_aux})
       in (nns', iis', thm) end
     | _ => raise TERM("sort_program: not a list",[prog]))
 
+fun independence_tac ctxt = 
+  (resolve_tac ctxt @{thms independent_ofI filter_literal_neq} THEN' SOLVED' (asm_simp_tac ctxt))
+
 structure Logic = Hoare_Logic(
   val binding = \<^binding>\<open>reorder_hoare\<close>
   structure Utils = Forward_Hoare_Utils(val logic_name = Binding.name_of binding)
@@ -90,10 +93,6 @@ structure Logic = Hoare_Logic(
   type range = string * int list
   fun program_term_typ _ = \<^typ>\<open>program\<close>
   fun invariant_typ _ = \<^typ>\<open>invariant\<close>
-
-(*   type options = unit
-  val default_options = ()
-  fun set_option _ _ _ _ _ = error "Logic reorder_hoare has no options" *)
 
   fun pretty_range _ (_,range) = Pretty.commas (range |> map (string_of_int #> Pretty.str)) |> Pretty.block
 
@@ -151,13 +150,13 @@ structure Logic = Hoare_Logic(
     val thm = @{thm join_hoare} OF [hoare_append, p13_thm, sorted_thm]
   in ((prog12,range13),thm) end
 
-
   fun invariant_implication _ inv1 inv2 =
     HOLogic.all_const \<^typ>\<open>mem\<close> $ Abs("mem",\<^typ>\<open>mem\<close>, 
       HOLogic.mk_imp (inv1 $ Bound 0, inv2 $ Bound 0))
 
   fun invariant_implication_lhs (Const(\<^const_name>\<open>All\<close>,_) $ Abs(_,_, Const(\<^const_name>\<open>implies\<close>,_) $ (inv1 $ _) $ _)) = inv1
 
+  val subgoal_tactics = [("independence_tac",independence_tac)]
 )
 
 

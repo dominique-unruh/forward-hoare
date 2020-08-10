@@ -165,17 +165,8 @@ fun wp_tac ctxt = (* print_subgoal_tac ctxt "wp_tac" THEN' *) resolve_tac ctxt @
 
 fun DETERM' tac i = DETERM (tac i)
 
-val independence_split_tac_pattern =
-  Syntax.read_prop (\<^context> |> Proof_Context.set_mode Proof_Context.mode_pattern)
-        "independent_of (\<lambda>a b. b) _"
-
-fun independence_split_tac_test ctxt t =
-  (Pattern.match (Proof_Context.theory_of ctxt) 
-      (independence_split_tac_pattern, Logic.strip_assums_concl t) (Vartab.empty,Vartab.empty);
-   true) handle Pattern.MATCH => false
-
-fun independence_split_tac ctxt = match_tac ctxt @{thms independent_of_split}
-  THEN' SUBGOAL (fn (t,_) => if independence_split_tac_test ctxt t then no_tac else all_tac)
+val independence_split_tac = Forward_Hoare_Utils.no_match_tactic \<^context> 1 "independent_of (\<lambda>a b. b) _" 
+  (fn ctxt => match_tac ctxt @{thms independent_of_split})
 
 fun independence_tac_step ctxt = DETERM' (match_tac ctxt (@{thms 
   independent_of_const independent_of_var}
@@ -371,7 +362,7 @@ structure Logic1 = Hoare_Logic(
     then tr_EXPR2_like HOLogic.boolT ctxt t
     else tr_EXPR_like HOLogic.boolT ctxt t
 
- val subgoal_tactics = Symtab.make [("wp_tac",wp_tac),("independence_tac",independence_tac)]
+ val subgoal_tactics = [("wp_tac",wp_tac),("independence_tac",independence_tac)]
 
 )
 
