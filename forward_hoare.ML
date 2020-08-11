@@ -437,7 +437,7 @@ fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (r
     | SOME previous => extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st
   in state end
 
-fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:string) (term:string) (st:'a) : Proof.state = let
+(* fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:string) (term:string) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
   val invariant = get_invariant context invariant |> the' (fn _ => "Unknown invariant " ^ invariant)
@@ -450,7 +450,7 @@ fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:stri
   (* val st = set_current_logic_command toolkit logic st *)
   val state = #theorem toolkit after_qed goal st
   val state = Proof.map_context (set_current_invariant invariant) state
-in state end
+in state end *)
 
 fun filter_OF (thms1:thm list) (thms2:thm list) : thm list = 
   thms1 |> map_filter (fn thm' => SOME (thm' OF thms2) handle THM _ => NONE)
@@ -590,14 +590,14 @@ fun invariant_implication_tr ctxt [inv1_var,inv2] = let
 (** Isar command **)
 
 val binding_parser = Parse.binding --| Args.$$$ ":"
-val invariant_parser = Parse.name --| (Args.$$$ "\<rightarrow>" || Args.$$$ "->")
+(* val invariant_parser = Parse.name --| (Args.$$$ "\<rightarrow>" || Args.$$$ "->")
 fun invariant_has_parser toolkit = binding_parser -- invariant_parser -- Parse.term
->> (fn ((binding,invariant),term) => invariant_has_command toolkit binding invariant term)
+>> (fn ((binding,invariant),term) => invariant_has_command toolkit binding invariant term) *)
 
 val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
-val name_parser = Parse.binding --| Parse.$$$ ":"
+(* val name_parser = Parse.binding --| Parse.$$$ ":" *)
 val content_parser = Parse.embedded
-fun declare_program_parser toolkit = (logic_parser -- name_parser -- content_parser)
+fun declare_program_parser toolkit = (logic_parser -- binding_parser -- content_parser)
   >> (fn ((logic,name),content) => define_program_command toolkit logic name content)
 
 val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
@@ -619,7 +619,7 @@ val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>invariant'\<close> "
     (declare_invariant_parser >> (fn ((logic,name),content) => 
         (define_invariant_command lthy_toolkit logic name content))) *)
 
-val name_parser = Parse.binding --| Parse.$$$ ":"
+val name_parser = Parse.binding --| Args.colon
 (* TODO: parse program name *)
 val extends_parser = Args.$$$ "extends" |-- Parse.name |> Scan.option
 val range_parser = Args.$$$ "range" |-- tokens_parser
@@ -647,14 +647,14 @@ in state end
 
 
 fun preserve_command_parser toolkit = 
-  (Parse.and_list1 (Scan.optional (Parse.binding --| Args.colon) Binding.empty -- Parse.thm)
+  (Parse.and_list1 (Scan.optional name_parser Binding.empty -- Parse.thm)
        -- (Parse.$$$ "in" |-- Parse.name))
   >> (fn (impls,in_inv) => preserve_command toolkit impls in_inv)
 
 (* TODO: add cuts and groups as needed *)
 fun command_parser_no_proof toolkit = 
   (Args.$$$ "program" |-- declare_program_parser toolkit) ||
-  (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit >> no_proof_obligation toolkit) ||
+  (* (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit >> no_proof_obligation toolkit) || *)
   (Args.$$$ "config" |-- config_parser toolkit) ||
   (Args.$$$ "invariant" |-- declare_invariant_parser toolkit) ||
   (Args.$$$ "preserve" |-- preserve_command_parser toolkit) ||
@@ -662,7 +662,7 @@ fun command_parser_no_proof toolkit =
 
 fun command_parser_proof toolkit = 
   (Args.$$$ "program" |-- declare_program_parser toolkit >> dummy_proof_obligation toolkit) ||
-  (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit) ||
+  (* (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit) || *)
   (Args.$$$ "config" |-- config_parser toolkit >> dummy_proof_obligation toolkit) ||
   (Args.$$$ "invariant" |-- declare_invariant_parser toolkit >> dummy_proof_obligation toolkit) ||
   (Args.$$$ "preserve" |-- preserve_command_parser toolkit >> dummy_proof_obligation toolkit) ||

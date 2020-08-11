@@ -10,29 +10,29 @@ hoare invariant (reorder_hoare) start: "\<lambda>m. True"
 
 hoare step1: range 1 pre start post step1 = default
 
-hoare' invariant_has step1x: step1 \<rightarrow> "\<lambda>m. m STR ''x'' = 1"
+have step1x: "{step1 \<Rightarrow> \<lambda>m. m STR ''x'' = 1}"
   apply updated by auto
 
 hoare step13: extends step1 range 3 post step13=default
 
 from \<open>{step1 \<Rightarrow> \<lambda>m. m STR ''x'' = 1}\<close>
-hoare' invariant_has step13x: step13 \<rightarrow> "\<lambda>m. m STR ''x'' = 1"
+have step13x: "{step13 \<Rightarrow> \<lambda>m. m STR ''x'' = 1}"
   by untouched
 
-hoare' invariant_has step13z: step13 \<rightarrow> "\<lambda>m. m STR ''z'' = 1"
+have step13z: "{step13 \<Rightarrow> \<lambda>m. m STR ''z'' = 1}"
   apply updated by auto
 
 hoare step132: extends step13 range 2 post step132=default
 
-hoare' invariant_has step132x: step132 \<rightarrow> "\<lambda>m. m STR ''x'' = 1"
+have step132x: \<open>{step132 \<Rightarrow> \<lambda>m. m STR ''x'' = 1}\<close>
   using step13x
   by untouched
 
-hoare' invariant_has step132z: step132 \<rightarrow> "\<lambda>m. m STR ''z'' = 1"
+have step132z: "{step132 \<Rightarrow> \<lambda>m. m STR ''z'' = 1}"
   using step13z
   by untouched
 
-hoare' invariant_has step132y: step132 \<rightarrow> "\<lambda>m. m STR ''y'' = 1"
+have step132y: "{step132 \<Rightarrow> \<lambda>m. m STR ''y'' = 1}"
   apply updated by auto
 
 qed
