@@ -387,8 +387,11 @@ fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok o
   val state = Proof.map_context (set_current_invariant invariant) state
 in state end *)
 
+fun maybe_OF thm thms : thm option =
+  SOME (thm OF thms) handle THM _ => NONE
+
 fun filter_OF (thms1:thm list) (thms2:thm list) : thm list = 
-  thms1 |> map_filter (fn thm' => SOME (thm' OF thms2) handle THM _ => NONE)
+  thms1 |> map_filter (fn thm => maybe_OF thm thms2)
 
 (* fun filter_inst ctxt (thms:thm list) var value : thm list =
   thms |> map_filter (fn thm' => SOME (Drule.infer_instantiate ctxt [(var,value)] thm') handle THM _ => NONE) *)
@@ -454,15 +457,23 @@ fun current_invariant_tac lenient OFs thms ctxt = SUBGOAL (fn (t,i) => let
               | NONE => let
                   val t = bool_of_prop t handle TERM(msg,Ts) => raise TERM("current_invariant_tac: "^msg,Ts)
                   in get_invariant_from_implication ctxt t end
-  val logic = #logic inv |> get_the_logic' ctxt
+  val logic = #logic inv |> get_the_logic' ctxt             
   val inv_def = #def_thm inv
-  val thms_inst = filter_OF thms (inv_def :: OFs)
   val inv_markup_name = #binding inv |> string_of_binding_invariant
+  val thms_inst = filter_OF thms [inv_def]
+  val _ = tracing' (fn _ => "Available rules for invariant " ^ inv_markup_name ^ ":")
+  val _ = if null OFs then () else tracing' (fn _ => "([\<star>] marks rules that can be instantiated with current facts)")
+  val thms_inst = map_filter (fn thm => let
+    val thm' = maybe_OF thm OFs
+    val _ = tracing' (fn _ => let
+        val thm_str = thm |> Thm.prop_of |> Syntax.pretty_term ctxt
+        val thm_str = if null OFs orelse is_none thm'
+                      then [thm_str] |> Pretty.item |> Pretty.string_of
+                      else [Pretty.str "[\<star>] ", thm_str] |> Pretty.item |> Pretty.string_of
+        in thm_str end)
+    in thm' end) thms_inst
   val _ = if null thms_inst 
           then error ("No rules found that match invariant " ^ inv_markup_name) else ()
-  val _ = tracing' (fn _ => Pretty.fbreaks (Pretty.str ("Available rules for invariant " ^ inv_markup_name ^ ":") ::
-              map (Pretty.item o single o Syntax.pretty_term ctxt o Thm.prop_of) thms_inst)
-          |> Pretty.block |> Pretty.string_of)
   in
     (resolve_tac ctxt thms_inst
      THEN_ALL_NEW

@@ -607,7 +607,7 @@ lemma untouched[hoare_untouched add]:
   assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
   shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
-  by (auto simp: SOLVE_WITH_def semantics1_Set_invalid)
+  by (auto simp: semantics1_Set_invalid)
 
 lemma untouchedLR[hoare_untouched add]: 
   fixes x :: "('mem,'val) var"

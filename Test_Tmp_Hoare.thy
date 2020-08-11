@@ -149,7 +149,7 @@ lemma True proof
 
   thm \<open>{step2 \<Rightarrow> $x1=$x2}\<close>
 
-  (* hoare preserve bla: \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> in step2 *)
+   hoare preserve bla: \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> in step2 
 
 (*   have [hoare_invi]: "{step2 \<Rightarrow> $x1=$x2}"
     using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> by untouched *)
