@@ -568,30 +568,26 @@ lemma wp_generic[hoare_wp add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 (p1,p2) A"
   assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> A' m1 m2"
-  assumes "PROP SOLVE_WITH STR ''wp_tac''
-                (Trueprop (\<forall>m1 m2. postcondition_default2 (p1,p2) A' m1 m2 \<longrightarrow> B m1 m2))"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>m1 m2. postcondition_default2 (p1,p2) A' m1 m2 \<longrightarrow> B m1 m2"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
-  using assms(2,3) unfolding assms(1) SOLVE_WITH_def postcondition_default2_def 
+  using assms(2,3) unfolding assms(1) postcondition_default2_def 
   apply auto by metis
 
-lemma remove_SOLVE_WITH: "PROP P \<Longrightarrow> PROP SOLVE_WITH s PROP P"
-  unfolding SOLVE_WITH_def by auto
-
 lemma wp_Set_cons1:
-  assumes "PROP SOLVE_WITH STR ''wp_tac'' (Trueprop (\<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2))"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2"
   shows "\<forall>mem1 mem2. postcondition_default2 (Set x e # p1, p2) (\<lambda>m1 m2. M (update_var x (e m1) m1) m2) mem1 mem2 \<longrightarrow> B mem1 mem2"
-  using assms unfolding SOLVE_WITH_def postcondition_default2_def
+  using assms unfolding postcondition_default2_def
   by auto
 
 lemma wp_Set_cons2:
-  assumes "PROP SOLVE_WITH STR ''wp_tac'' (Trueprop (\<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2))"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2"
   shows "\<forall>mem1 mem2. postcondition_default2 (p1, Set x e # p2) (\<lambda>m1 m2. M m1 (update_var x (e m2) m2)) mem1 mem2 \<longrightarrow> B mem1 mem2"
-  using assms unfolding SOLVE_WITH_def postcondition_default2_def
+  using assms unfolding postcondition_default2_def
   by auto
 
 lemma wp_skip12:
   shows "\<forall>mem1 mem2. postcondition_default2 ([], []) B mem1 mem2 \<longrightarrow> B mem1 mem2"
-  unfolding SOLVE_WITH_def postcondition_default2_def
+  unfolding postcondition_default2_def
   by auto
 
 ML \<open>
@@ -604,7 +600,7 @@ lemma untouched[hoare_untouched add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes imp: "\<forall>m. A m \<longrightarrow> B m"
-  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of B x"
   shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
   by (auto simp: semantics1_Set_invalid)
@@ -613,35 +609,35 @@ lemma untouchedLR[hoare_untouched add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 ([Set x e],[Set x' e']) A"
   assumes imp: "\<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
-  assumes indepL: "PROP SOLVE_WITH STR ''independence_tac'' (PROP independentL_of B x)"
-  assumes indepR: "PROP SOLVE_WITH STR ''independence_tac'' (PROP independentR_of B x')"
+  assumes indepL: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentL_of B x"
+  assumes indepR: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentR_of B x'"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
   using imp indepL indepR unfolding assms(1) postcondition_default2_def independent_of_def 
-  by (auto simp: SOLVE_WITH_def semantics1_Set_invalid)
+  by (auto simp: semantics1_Set_invalid)
 
 lemma updated[hoare_updated add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
-  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of e x))"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of e x"
   shows "\<forall>m. invariant m \<longrightarrow> eval_var x m = e m"
-  using assms unfolding SOLVE_WITH_def assms postcondition_default_def independent_of_def by auto
+  using assms unfolding assms postcondition_default_def independent_of_def by auto
 
 lemma updatedL[hoare_updated add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 ([Set x e], p) A"
   assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
-  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of e x))"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of e x"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m1 = e m1"
-  using assms unfolding SOLVE_WITH_def assms postcondition_default2_def independent_of_def by auto
+  using assms unfolding assms postcondition_default2_def independent_of_def by auto
 
 lemma updatedR[hoare_updated add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 (p, [Set x e]) A"
   assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
-  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of e x))"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of e x"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m2 = e m2"
-  using assms unfolding SOLVE_WITH_def assms postcondition_default2_def independent_of_def by auto
+  using assms unfolding assms postcondition_default2_def independent_of_def by auto
 
 subsection \<open>Concrete syntax for programs\<close>
 

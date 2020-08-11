@@ -14,8 +14,35 @@ named_theorems hoare_untouched
 named_theorems hoare_updated
 named_theorems hoare_wp
 
-definition SOLVE_WITH :: "String.literal \<Rightarrow> prop \<Rightarrow> prop" where "SOLVE_WITH _ == \<lambda>x. x"
+definition SOLVE_WITH :: "String.literal \<Rightarrow> prop \<Rightarrow> prop" 
+  where "SOLVE_WITH _ == \<lambda>x. x"
 declare SOLVE_WITH_def[simp]
+
+ML \<open>
+fun dest_bit_syntax (Const(\<^const_syntax>\<open>False\<close>,_)) = 0
+  | dest_bit_syntax (Const(\<^const_syntax>\<open>True\<close>,_)) = 1
+  | dest_bit_syntax _ = raise TERM ("dest_bit", []);
+
+val dest_bits_syntax = Integer.eval_radix 2 o map dest_bit_syntax;
+
+val dest_literal_syntax =
+  let
+    fun dest (Const (\<^const_syntax>\<open>Groups.zero_class.zero\<close>, Type ("String.literal", []))) = []
+      | dest (Const (\<^const_syntax>\<open>String.empty_literal\<close>, _)) = []
+      | dest (Const (\<^const_syntax>\<open>String.Literal\<close>, _) $ b0 $ b1 $ b2 $ b3 $ b4 $ b5 $ b6 $ t) =
+          chr (dest_bits_syntax [b0, b1, b2, b3, b4, b5, b6]) :: dest t
+      | dest t = raise TERM ("dest_literal", [t]);
+  in implode o dest end;
+\<close>
+
+
+syntax "_SOLVE_WITH" :: "id \<Rightarrow> prop \<Rightarrow> prop" ("\<lbrakk>SOLVER _\<rbrakk> _" 0)
+parse_translation \<open>[(\<^syntax_const>\<open>_SOLVE_WITH\<close>, fn ctxt => fn [Free(n,_), t] =>
+  Const(\<^const_name>\<open>SOLVE_WITH\<close>, dummyT) $ HOLogic.mk_literal n $ t)]\<close>
+print_translation \<open>[(\<^const_syntax>\<open>SOLVE_WITH\<close>, fn ctxt => fn [n,t] => let
+  val n' = dest_literal_syntax n handle TERM _ => raise Match
+  in Const(\<^syntax_const>\<open>_SOLVE_WITH\<close>,dummyT) $ Free(n',dummyT) $ t end)]\<close>
+
 lemma remove_SOLVE_WITH: "PROP P \<Longrightarrow> PROP SOLVE_WITH s PROP P"
   unfolding SOLVE_WITH_def by auto
 

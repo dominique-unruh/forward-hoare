@@ -236,40 +236,40 @@ lemma newvalue_Guess[hoare_updated add]:
 lemma unchanged_Guess_trivial[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Guess x) A"
   assumes imp: "pc_imp A B"
-  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of B x"
   shows "pc_imp invariant B"
   using assms
-  unfolding assms(2) SOLVE_WITH_def independent_of_def pc_imp_def
+  unfolding assms(2) independent_of_def pc_imp_def
   apply auto by (metis fun_upd_def)
 
 lemma unchanged_Guess_pick[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_pick (Guess x) i A"
   assumes imp: "pc_imp A B"
-  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of B x"
   shows "pc_imp invariant B"
   using assms
-  unfolding assms(2) SOLVE_WITH_def independent_of_def pc_imp_def
+  unfolding assms(2) independent_of_def pc_imp_def
   apply auto
   by (metis (no_types, lifting) fun_upd_def)
 
 lemma unchanged_Add[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Add x y) A"
   assumes imp: "pc_imp A B"
-  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
-  assumes xy: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (x \<noteq> y))"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of B x"
+  assumes xy: "\<lbrakk>SOLVER independence_tac\<rbrakk> x \<noteq> y"
   shows "pc_imp invariant B"
   using assms
-  unfolding assms(2) SOLVE_WITH_def independent_of_def pc_imp_def
+  unfolding assms(2) independent_of_def pc_imp_def
   apply auto
   by (metis (no_types, lifting) fun_upd_def)
 
 lemma unchanged_Set[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Set x i) A"
   assumes imp: "pc_imp A B"
-  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of B x"
   shows "pc_imp invariant B"
   using assms
-  unfolding assms(2) SOLVE_WITH_def independent_of_def pc_imp_def
+  unfolding assms(2) independent_of_def pc_imp_def
   apply auto
   by (metis (no_types, lifting) fun_upd_def)
 

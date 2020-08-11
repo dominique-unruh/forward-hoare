@@ -166,7 +166,7 @@ lemma wp[hoare_wp add]:
 lemma untouched[hoare_untouched add]:
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes imp: "\<forall>m. A m \<longrightarrow> B m"
-  assumes indep: "PROP SOLVE_WITH STR ''independence_tac'' (Trueprop (independent_of B x))"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of B x"
   shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
   apply auto
