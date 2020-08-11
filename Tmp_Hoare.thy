@@ -10,6 +10,26 @@ section \<open>Programs\<close>
 
 definition "less_eq_card A B \<longleftrightarrow> (\<exists>f. inj_on f A \<and> range f \<subseteq> B)"
 
+lemma less_eq_card[trans]: 
+  assumes "less_eq_card A B" and "less_eq_card B C"
+  shows "less_eq_card A C"
+proof -
+  from assms obtain fAB fBC 
+    where inj_fAB: "inj_on fAB A" and range_fAB: "range fAB \<subseteq> B" and inj_fBC: "inj_on fBC B" and range_fBC: "range fBC \<subseteq> C"
+    apply atomize_elim unfolding less_eq_card_def by auto
+  define f where "f = fBC o fAB"
+  have "inj_on f A"
+    unfolding f_def
+    using inj_fAB apply (rule comp_inj_on)
+    using range_fAB inj_fBC
+    by (meson UNIV_I image_subset_iff inj_on_subset)
+  moreover have "range f \<subseteq> C"
+    unfolding f_def using range_fBC by auto
+  ultimately show ?thesis
+    unfolding less_eq_card_def
+    by auto
+qed
+
 type_synonym ('mem,'var) expression = \<open>'mem \<Rightarrow> 'var\<close>
 type_synonym 'mem untyped_expression = \<open>('mem,'mem) expression\<close>
 
@@ -295,6 +315,7 @@ section \<open>Semantics\<close>
 
 fun semantics1 :: "'mem instruction \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
   "semantics1 (SetRaw x e) m = return_spmf (update_untyped_var x (e m) m)"
+(* TODO SampleRaw *)
 
 lemma semantics1_Set[simp]:
   fixes x :: "('mem,'val) var" and a :: 'val
@@ -357,6 +378,10 @@ lemma postcondition_default2_valid:
 definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
 abbreviation (input) "independentL_of e x \<equiv> (\<And>m2. independent_of (\<lambda>m1. e m1 m2) x)"
 abbreviation (input) "independentR_of e x \<equiv> (\<And>m1. independent_of (\<lambda>m2. e m1 m2) x)"
+
+definition "independent_of_prog e P \<longleftrightarrow> (\<forall>m. \<forall>m'\<in>set_spmf (semantics P m). e m = e m')"
+abbreviation (input) "independentL_of_prog e x \<equiv> (\<And>m2. independent_of_prog (\<lambda>m1. e m1 m2) x)"
+abbreviation (input) "independentR_of_prog e x \<equiv> (\<And>m1. independent_of_prog (\<lambda>m2. e m1 m2) x)"
 
 
 (* axiomatization independent_of :: "('mem \<Rightarrow> 'a) \<Rightarrow> ('mem,'b) var \<Rightarrow> bool" *)
@@ -590,30 +615,36 @@ lemma wp_skip12:
   unfolding postcondition_default2_def
   by auto
 
-ML \<open>
-(* fun print_subgoal_tac ctxt caption = SUBGOAL (fn (t,i) => (tracing (caption ^ ": " ^ Syntax.string_of_term ctxt t); all_tac)) *)
+lemma independent_of_prog_Set_cons:
+  assumes "independent_of A x"
+  shows "independent_of_prog A (Set x e # P)"
+  sorry
 
-\<close>
-
+lemma independent_of_prog_empty:
+  shows "independent_of_prog A []"
+  sorry
 
 lemma untouched[hoare_untouched add]: 
   fixes x :: "('mem,'val) var"
-  assumes "invariant \<equiv> postcondition_default [Set x e] A"
+  assumes "invariant \<equiv> postcondition_default P A"
   assumes imp: "\<forall>m. A m \<longrightarrow> B m"
-  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of B x"
+  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of_prog B P"
   shows "\<forall>m. invariant m \<longrightarrow> B m"
-  using imp indep unfolding assms(1) postcondition_default_def independent_of_def 
-  by (auto simp: semantics1_Set_invalid)
+  using imp indep
+  unfolding assms(1) postcondition_default_def 
+            independent_of_prog_def
+  by auto
 
 lemma untouchedLR[hoare_untouched add]: 
   fixes x :: "('mem,'val) var"
-  assumes "invariant \<equiv> postcondition_default2 ([Set x e],[Set x' e']) A"
+  assumes "invariant \<equiv> postcondition_default2 (P1,P2) A"
   assumes imp: "\<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
-  assumes indepL: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentL_of B x"
-  assumes indepR: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentR_of B x'"
+  assumes indepL: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentL_of_prog B P1"
+  assumes indepR: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentR_of_prog B P2"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
-  using imp indepL indepR unfolding assms(1) postcondition_default2_def independent_of_def 
-  by (auto simp: semantics1_Set_invalid)
+  using imp indepL indepR
+  unfolding assms(1) postcondition_default2_def independent_of_prog_def
+  apply auto by blast
 
 lemma updated[hoare_updated add]:
   fixes x :: "('mem,'val) var"

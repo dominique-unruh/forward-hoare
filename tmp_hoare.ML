@@ -169,7 +169,8 @@ val independence_split_tac = Forward_Hoare_Utils.no_match_tactic \<^context> 1 "
   (fn ctxt => match_tac ctxt @{thms independent_of_split})
 
 fun independence_tac_step ctxt = DETERM' (match_tac ctxt (@{thms 
-  independent_of_const independent_of_var}
+  independent_of_const independent_of_var
+  independent_of_prog_Set_cons independent_of_prog_empty}
      @ Named_Theorems.get ctxt \<^named_theorems>\<open>independence\<close>)
   ORELSE' independence_split_tac ctxt)
 

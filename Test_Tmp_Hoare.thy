@@ -126,10 +126,6 @@ lemma True proof
 
   hoare step1L: range 1 ~ \<emptyset> pre start2 post step1L = default
 
-  (* TODO: why does "apply untouched" not work? *)
-  have [hoare_invi]: \<open>{step1L \<Rightarrow> $z1=$z2}\<close>
-    using \<open>{start2 \<Rightarrow> $z1=$z2}\<close> apply wp by auto
-
   have [hoare_invi]: "{step1L \<Rightarrow> $x1=$x2+2}"
     apply wp
     using start2_inv_def by auto
@@ -142,14 +138,9 @@ lemma True proof
     using \<open>{step1L \<Rightarrow> $x1=$x2+2}\<close> 
     by auto
 
-  have [hoare_invi]: \<open>{step1LR \<Rightarrow> $z1=$z2}\<close>
-    using \<open>{step1L \<Rightarrow> $z1=$z2}\<close> apply wp by auto
-
   hoare step2: range 2~2 pre step1LR post step2 = default
 
-  thm \<open>{step2 \<Rightarrow> $x1=$x2}\<close>
-
-   hoare preserve bla: \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> in step2 
+   (* hoare preserve bla: \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> in step2  *)
 
 (*   have [hoare_invi]: "{step2 \<Rightarrow> $x1=$x2}"
     using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> by untouched *)
@@ -160,6 +151,10 @@ lemma True proof
     by simp
 
   hoare step3: range 3~3 pre step2 post step3 = default
+
+  from \<open>{step3 \<Rightarrow> $x1=$x2}\<close> \<open>{step3 \<Rightarrow> $z1=$z2}\<close>
+  have [hoare_invi]: "{step3 \<Rightarrow> $x1*$z1 = $x2*$z2}"
+    by auto
 
 qed
 
