@@ -1,6 +1,10 @@
 structure Forward_Hoare =
 struct
 
+fun bool_of_prop t = 
+  if fastype_of t = propT then HOLogic.dest_Trueprop (Logic.strip_assums_concl t)
+  else t
+
 fun string_of_fact_ref (r as Facts.Named _) = Facts.string_of_ref r
   | string_of_fact_ref (Facts.Fact str) = enclose "\<open>" "\<close>" str
 
@@ -131,8 +135,11 @@ type invariant = {
   binding: binding,
   term: term,
   const: term,
-  def_thm: thm
+  def_thm: thm,
+  known_implications: thm list
 }
+
+fun name_of_invariant ({binding,...}:invariant) = Binding.name_of binding
 
 fun invariant_eq (i1,i2) = #serial i1 = #serial i2
 
@@ -197,6 +204,8 @@ fun get_program context name = Symtab.lookup (Hoare_Data.get context |> #program
 fun get_the_program context name = get_program context name |> the' (fn _ => "Unknown program " ^ name)
 fun get_current_logic context = Hoare_Data.get context |> #current_logic
 fun get_the_current_logic context = get_current_logic context |> the' (fn _ => "No current logic")
+fun map_known_implications f ({known_implications,binding,const,def_thm,logic,serial,term} : invariant) : invariant =
+  {known_implications = f known_implications,binding=binding,const=const,def_thm=def_thm,logic=logic,serial=serial,term=term}
 
 structure Hoare_Proof_Data = Proof_Data (
   (* current_invariant is local to a proof obligation created by a hoare' command *)
@@ -228,9 +237,10 @@ val get_current_invariant_def = get_current_invariant #> Option.map #def_thm
 val get_the_current_invariant_def = get_current_invariant_def
   #> the' (fn _ => "No current invariant")
 
-fun invariant_morph m ({serial,logic,binding,term,const,def_thm}:invariant) : invariant =
+fun invariant_morph m ({serial,logic,binding,term,const,def_thm,known_implications}:invariant) : invariant =
  {serial=serial, logic=logic, binding=binding, term=Morphism.term m term,
-   const=Morphism.term m const, def_thm=Morphism.thm m def_thm}
+   const=Morphism.term m const, def_thm=Morphism.thm m def_thm, 
+   known_implications=map (Morphism.thm m) known_implications}
 
 fun catch_internal_error logic func f x = f x
    handle TYPE(msg, Ts, ts) => let 
@@ -242,7 +252,9 @@ fun add_invariant (toolkit:'st toolkit) (logic:logic) binding (invariant:term) s
   val (invariant_const,thm,st) = 
       #define toolkit (bind "_inv") (bind "_inv_def") invariant st
       (* def' (bind "_inv") invariant ctxt *)
-  val info : invariant = {serial=serial(), logic = name_of_logic logic, binding=binding, const=invariant_const, term=invariant, def_thm=thm}
+  val info : invariant = {serial=serial(), logic = name_of_logic logic, binding=binding,
+                          const=invariant_const, term=invariant, def_thm=thm, 
+                          known_implications=[]}
   val st = #declaration toolkit (fn m => add_invariant0 (invariant_morph m info)) st
   in (info,st) end
 
@@ -460,7 +472,7 @@ fun filter_OF (thms1:thm list) (thms2:thm list) : thm list =
 
 (* Raises TERM or TYPE if not found *)
 fun get_invariant_from_implication' (ctxt:Proof.context) (logic:logic) (t:term) = let
-  val const = #invariant_implication_lhs logic t
+  val const = #invariant_implication_lhs logic (bool_of_prop t)
   val inv = case get_invariants (Context.Proof ctxt) |> Symtab.get_first 
 (* TODO: discard invariants from a different logic *)
                    (fn (_,inv) => if #const inv = const then SOME inv else NONE)
@@ -474,6 +486,32 @@ fun get_invariant_from_implication (ctxt:Proof.context) (t:term) = let
         handle TERM _ => NONE | TYPE _ => NONE | Match => NONE)
   in inv |> the' (fn _ => "Could not identify invariant in the lhs of " ^ Syntax.string_of_term ctxt t) end
 
+
+fun add_known_implication (invariant:invariant) (implication:thm) context : Context.generic = let
+  (* val context = #context toolkit st *)
+  (* val invariant = get_the_invariant context invariant_name *)
+  val logic = #logic invariant |> get_the_logic (Context.theory_of context)
+  val const = #invariant_implication_lhs logic (implication |> Thm.prop_of |> bool_of_prop)
+  val _ = if const = #const invariant then ()
+          else raise THM ("add_known_implication: implication incorrect for invariant "^ name_of_invariant invariant, 1, [implication])
+(*   fun update m = let
+    val implication' = Morphism.thm m implication
+    in map_invariants (Symtab.map_entry invariant_name (map_known_implications 
+            (fn is => implication'::is))) end
+  val st = #declaration toolkit update st *)
+in map_invariants (Symtab.map_entry (name_of_invariant invariant) (map_known_implications 
+            (fn is => implication::is))) context end
+
+fun add_known_implication_auto (implication:thm) context : Context.generic = let
+  val ctxt = Context.proof_of context
+  val invariant = get_invariant_from_implication ctxt (Thm.prop_of implication)
+  val context = add_known_implication invariant implication context
+  in context end
+
+val _ = Theory.setup
+  (Attrib.setup \<^binding>\<open>hoare_invi\<close> 
+    (Scan.succeed (Thm.declaration_attribute add_known_implication_auto))
+    "Declares this theorem as an invariant implication")
 
 fun auto_subgoal_tac lenient (logic:logic) ctxt = SUBGOAL (fn (t,i) => case t of
   Const(\<^const_name>\<open>SOLVE_WITH\<close>,_) $ str $ _ => let
@@ -491,7 +529,7 @@ fun current_invariant_tac lenient OFs thms ctxt = SUBGOAL (fn (t,i) => let
   val thms = thms ctxt
   val inv = case get_current_invariant ctxt of SOME inv => inv
               | NONE => let
-                  val t = HOLogic.dest_Trueprop (Logic.strip_assums_concl t) handle TERM(msg,Ts) => raise TERM("current_invariant_tac: "^msg,Ts)
+                  val t = bool_of_prop t handle TERM(msg,Ts) => raise TERM("current_invariant_tac: "^msg,Ts)
                   in get_invariant_from_implication ctxt t end
   val logic = #logic inv |> get_the_logic' ctxt
   val inv_def = #def_thm inv
