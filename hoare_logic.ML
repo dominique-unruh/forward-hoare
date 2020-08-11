@@ -1,5 +1,6 @@
 signature HOARE_LOGIC_ARGS =
 sig
+val this_logic_reference: Forward_Hoare.logic option Unsynchronized.ref
 (* type program *)
 type range
 type options
@@ -136,6 +137,8 @@ val logic : logic = {
   set_option = set_option,
   subgoal_tactics = Symtab.make Logic.subgoal_tactics
 }
+
+val _ = Logic.this_logic_reference := SOME logic
 
 val _ = Context.>> (Context.map_theory (Logic_Data.map (Symtab.update_new (Binding.name_of Logic.binding, logic))))
 end

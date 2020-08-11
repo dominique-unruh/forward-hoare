@@ -87,7 +87,7 @@ fun independence_tac ctxt =
 
 structure Logic = Hoare_Logic(
   val binding = \<^binding>\<open>reorder_hoare\<close>
-  structure Utils = Forward_Hoare_Utils(val logic_name = Binding.name_of binding)
+  structure Utils = Forward_Hoare_Utils()
   open Utils
 
   type range = string * int list

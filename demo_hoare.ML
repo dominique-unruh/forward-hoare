@@ -21,7 +21,7 @@ fun independence_tac ctxt =
 
 structure Demo_Hoare_Logic = Hoare_Logic(
   val binding = \<^binding>\<open>demo_logic\<close>
-  structure Utils = Forward_Hoare_Utils(val logic_name = Binding.name_of binding)
+  structure Utils = Forward_Hoare_Utils()
   open Utils
 
   (* type program = instruction list *)
