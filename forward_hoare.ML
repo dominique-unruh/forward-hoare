@@ -1,6 +1,11 @@
 structure Forward_Hoare =
 struct
 
+val silent = Thread_Data.var () : unit Thread_Data.var
+fun tracing' msg = if Thread_Data.get silent = NONE
+                   then tracing (msg()) else ()
+fun with_silence f x = Thread_Data.setmp silent (SOME()) f x
+
 fun bool_of_prop t = 
   if fastype_of t = propT then HOLogic.dest_Trueprop (Logic.strip_assums_concl t)
   else t
@@ -258,65 +263,10 @@ fun add_invariant (toolkit:'st toolkit) (logic:logic) binding (invariant:term) s
   val st = #declaration toolkit (fn m => add_invariant0 (invariant_morph m info)) st
   in (info,st) end
 
-fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:string) (postcondition:string) (st:'a) : Proof.state = let
-  val context = #context toolkit st
-  val ctxt = Context.proof_of context
-  (* val program = get_the_program context program *)
-  val precondition = case get_invariant context precondition of
-    SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
-  val postcondition = case get_invariant context postcondition of
-    SOME inv => inv | NONE => error ("Undefined postcondition " ^ postcondition)
-  fun bind suffix = Binding.suffix_name suffix binding
-  (* val logic = get_the_logic (Context.theory_of context) (#logic program) *)
-(*   val _ = if #valid_range logic range then ()
-          else error ("Invalid range " ^ Pretty.string_of (#pretty_range logic ctxt range)) *)
-  val program_fragment = (#extract_range logic) ctxt range
-  val _ = tracing ("Range: " ^ (Pretty.string_of (#pretty_range logic ctxt range)))
-  val _ = tracing ("Program fragment: " ^ Syntax.string_of_term ctxt program_fragment)
-  val (program_fragment_const,_,st) = 
-      #define toolkit (bind "_prog") (bind "_prog_def") program_fragment st
-  val valid_prop = #hoare_thm logic ctxt (#const precondition) program_fragment (#const postcondition)
-  fun after_qed valid st = let
-      val info : hoare = {serial=serial(), binding=binding, range=range,
-        precondition=Binding.name_of (#binding precondition),
-        postcondition=Binding.name_of (#binding postcondition),
-        program_fragment_const=program_fragment_const,
-        logic = logic,
-        (* program=program |> #binding |> Binding.name_of, *)
-        valid=valid}
-      val st = #note toolkit (Binding.suffix_name "_valid" binding) valid st
-      val st = #declaration toolkit (add_hoare0decl info) st
-      in after_qed0 (st, info) end
-  val state = #theorem toolkit after_qed valid_prop st
-
-in state end
-
-
 fun parse_src expect ctxt (parser:'a context_parser) (src:Token.src) : 'a = let
   val eof = Parse.group expect Parse.eof |> Scan.lift
   val (result,_) = Scan.catch (parser --| eof) (Context.Proof ctxt, src @ [Token.eof])
   in result end
-
-fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:string) 
-    (postcondition:binding) (make_post:string) (make_post_args:Token.src) (st:'a) : Proof.state = let
-  val context = #context toolkit st
-  val ctxt = Context.proof_of context
-  val program_fragment = (#extract_range logic) ctxt range
-  val precondition' = case get_invariant context precondition of
-    SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
-  val make_post' = get_the_postcondition_generator logic make_post
-  val make_post' = parse_src (fn _ =>  "end of arguments to " ^ make_post) ctxt make_post' make_post_args
-  val (post,tac) = make_post' program_fragment (#const precondition')
-  val _ = catch_internal_error (#binding logic) ("typechecking result of postcondition generator "^make_post)
-            (Sign.cert_term (Proof_Context.theory_of ctxt)) post
-  val (post,st) = add_invariant toolkit logic postcondition post st
-  val state = new_hoare toolkit binding after_qed0 logic range precondition (Binding.name_of postcondition) st
-  val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
-    |> Seq.first_result "could not unfold definition of postcondition (internal error)"
-  val (state,_) = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (tac ctxt)), Position.no_range) state
-    |> Seq.first_result "could not solve proof obligation"
-
-  in state end
 
 fun join_hoare (toolkit:'a toolkit) binding (hoare1:string) (hoare2:string) (st:'a) = let
   val context = #context toolkit st
@@ -366,19 +316,6 @@ fun extend_hoare binding (previous:string) after_qed0 range (postcondition:strin
     in after_qed0 (state, hoare, joined_hoare) end
   val state = new_hoare binding_step after_qed program range precondition postcondition state
 in state end *)
-
-fun extend_hoare_auto (toolkit:'a toolkit) binding (previous:string) after_qed0 range (postcondition:binding)
-    (make_post:string) (make_post_args:Token.src) (st:'a) = let
-  val context = #context toolkit st
-  val binding_step = Binding.suffix_name "_step" binding
-  val previous_hoare = get_the_hoare context previous
-  val logic = #logic previous_hoare
-  val precondition = #postcondition previous_hoare
-  fun after_qed (st, hoare) = let
-    val (st, joined_hoare) = join_hoare toolkit binding previous (Binding.name_of binding_step) st
-    in after_qed0 (st, hoare, joined_hoare) end
-  val state = new_hoare_auto toolkit binding_step after_qed logic range precondition postcondition make_post make_post_args st
-in state end
 
 
 fun read_term_typed ctxt T str = let
@@ -434,20 +371,6 @@ in st end
 
 fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
 
-fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (range:Token.src) (pre:string option) (post:binding)
-   (make_post:string) (make_post_args:Token.src) (st:'a) : Proof.state = let
-  val context = #context toolkit st
-  val ctxt = Context.proof_of context
-  val logic = get_the_current_logic context
-  val options = get_options logic context
-  val range' = parse_src (K "end of range description") ctxt (#read_range logic options NONE) range
-  val st = set_current_logic_command toolkit logic st
-  val state = case extends of
-    NONE => (case pre of
-             NONE => error "Please specify precondition (pre) or previous Hoare judgment (extends)"
-             | SOME pre => new_hoare_auto toolkit name fst logic range' pre post make_post make_post_args st)
-    | SOME previous => extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st
-  in state end
 
 (* fun invariant_has_command (toolkit:'a toolkit) (binding:binding) (invariant:string) (term:string) (st:'a) : Proof.state = let
   val context = #context toolkit st
@@ -537,9 +460,9 @@ fun current_invariant_tac lenient OFs thms ctxt = SUBGOAL (fn (t,i) => let
   val inv_markup_name = #binding inv |> string_of_binding_invariant
   val _ = if null thms_inst 
           then error ("No rules found that match invariant " ^ inv_markup_name) else ()
-  val _ = Pretty.fbreaks (Pretty.str ("Available rules for invariant " ^ inv_markup_name ^ ":") ::
+  val _ = tracing' (fn _ => Pretty.fbreaks (Pretty.str ("Available rules for invariant " ^ inv_markup_name ^ ":") ::
               map (Pretty.item o single o Syntax.pretty_term ctxt o Thm.prop_of) thms_inst)
-          |> Pretty.block |> Pretty.string_of |> tracing
+          |> Pretty.block |> Pretty.string_of)
   in
     (resolve_tac ctxt thms_inst
      THEN_ALL_NEW
@@ -576,6 +499,112 @@ fun preserve_invariant_implication ctxt implication (new_invariant:invariant) = 
             |> HOLogic.mk_Trueprop
   fun tac {context,...} = invariant_untouched_tac context false ii1 1
   in Goal.prove ctxt [] [] ii2 tac end
+
+fun auto_preserve_invariant_implications (toolkit:'a toolkit) implications (new_invariant:invariant) (st:'a) : 'a = let
+  val ctxt = #context toolkit st |> Context.proof_of
+  fun try1 implication st = let 
+    val _ = tracing ("Trying to preserve: " ^ Syntax.string_of_term ctxt (Thm.prop_of implication))
+    val new_impl = SOME (with_silence (preserve_invariant_implication ctxt implication) new_invariant)
+                   handle ERROR _ => NONE | TERM _ => NONE | THM _ => NONE | TYPE _ => NONE | Match => NONE
+    val st = case new_impl of 
+      NONE => (tracing "   \<dots> failed"; st)
+      | SOME new_impl => let
+        val _ = tracing ("   \<dots> success: " ^ Syntax.string_of_term ctxt (Thm.prop_of new_impl))
+        val st = #note toolkit Binding.empty new_impl st
+        val st = #declaration toolkit (fn m => add_known_implication new_invariant (Morphism.thm m new_impl)) st
+        in st end
+    in st end
+  val st = fold try1 implications st
+in st end
+
+
+fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:string) (postcondition:string) (st:'a) : Proof.state = let
+  val context = #context toolkit st
+  val ctxt = Context.proof_of context
+  (* val program = get_the_program context program *)
+  val precondition = case get_invariant context precondition of
+    SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
+  val postcondition = case get_invariant context postcondition of
+    SOME inv => inv | NONE => error ("Undefined postcondition " ^ postcondition)
+  fun bind suffix = Binding.suffix_name suffix binding
+  (* val logic = get_the_logic (Context.theory_of context) (#logic program) *)
+(*   val _ = if #valid_range logic range then ()
+          else error ("Invalid range " ^ Pretty.string_of (#pretty_range logic ctxt range)) *)
+  val program_fragment = (#extract_range logic) ctxt range
+  val _ = tracing ("Range: " ^ (Pretty.string_of (#pretty_range logic ctxt range)))
+  val _ = tracing ("Program fragment: " ^ Syntax.string_of_term ctxt program_fragment)
+  val (program_fragment_const,_,st) = 
+      #define toolkit (bind "_prog") (bind "_prog_def") program_fragment st
+  val valid_prop = #hoare_thm logic ctxt (#const precondition) program_fragment (#const postcondition)
+  fun after_qed valid st = let
+      val info : hoare = {serial=serial(), binding=binding, range=range,
+        precondition=Binding.name_of (#binding precondition),
+        postcondition=Binding.name_of (#binding postcondition),
+        program_fragment_const=program_fragment_const,
+        logic = logic,
+        (* program=program |> #binding |> Binding.name_of, *)
+        valid=valid}
+      val st = #note toolkit (Binding.suffix_name "_valid" binding) valid st
+      val st = #declaration toolkit (add_hoare0decl info) st
+      val st = auto_preserve_invariant_implications toolkit
+                (#known_implications precondition) postcondition st
+      in after_qed0 (st, info) end
+  val state = #theorem toolkit after_qed valid_prop st
+
+in state end
+
+
+fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:string) 
+    (postcondition:binding) (make_post:string) (make_post_args:Token.src) (st:'a) : Proof.state = let
+  val context = #context toolkit st
+  val ctxt = Context.proof_of context
+  val program_fragment = (#extract_range logic) ctxt range
+  val precondition' = case get_invariant context precondition of
+    SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
+  val make_post' = get_the_postcondition_generator logic make_post
+  val make_post' = parse_src (fn _ =>  "end of arguments to " ^ make_post) ctxt make_post' make_post_args
+  val (post,tac) = make_post' program_fragment (#const precondition')
+  val _ = catch_internal_error (#binding logic) ("typechecking result of postcondition generator "^make_post)
+            (Sign.cert_term (Proof_Context.theory_of ctxt)) post
+  val (post,st) = add_invariant toolkit logic postcondition post st
+  val state = new_hoare toolkit binding after_qed0 logic range precondition (Binding.name_of postcondition) st
+  val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
+    |> Seq.first_result "could not unfold definition of postcondition (internal error)"
+  val (state,_) = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (tac ctxt)), Position.no_range) state
+    |> Seq.first_result "could not solve proof obligation"
+
+  in state end
+
+
+fun extend_hoare_auto (toolkit:'a toolkit) binding (previous:string) after_qed0 range (postcondition:binding)
+    (make_post:string) (make_post_args:Token.src) (st:'a) = let
+  val context = #context toolkit st
+  val binding_step = Binding.suffix_name "_step" binding
+  val previous_hoare = get_the_hoare context previous
+  val logic = #logic previous_hoare
+  val precondition = #postcondition previous_hoare
+  fun after_qed (st, hoare) = let
+    val (st, joined_hoare) = join_hoare toolkit binding previous (Binding.name_of binding_step) st
+    in after_qed0 (st, hoare, joined_hoare) end
+  val state = new_hoare_auto toolkit binding_step after_qed logic range precondition postcondition make_post make_post_args st
+in state end
+
+fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (range:Token.src) (pre:string option) (post:binding)
+   (make_post:string) (make_post_args:Token.src) (st:'a) : Proof.state = let
+  val context = #context toolkit st
+  val ctxt = Context.proof_of context
+  val logic = get_the_current_logic context
+  val options = get_options logic context
+  val range' = parse_src (K "end of range description") ctxt (#read_range logic options NONE) range
+  val st = set_current_logic_command toolkit logic st
+  val state = case extends of
+    NONE => (case pre of
+             NONE => error "Please specify precondition (pre) or previous Hoare judgment (extends)"
+             | SOME pre => new_hoare_auto toolkit name fst logic range' pre post make_post make_post_args st)
+    | SOME previous => extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st
+  in state end
+
+
 
 fun preserve_command (toolkit:'a toolkit) invs (in_inv:string) (state:'a) = let
   val ctxt = #context toolkit state |> Context.proof_of

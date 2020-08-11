@@ -107,15 +107,16 @@ lemma [simp]:
 
 Hoare config (tmp_hoare) memory = memory
 
-Hoare program (tmp_hoare) left:  \<open>PROG[x:=$x+1; z:=nat ($x)]\<close>
-Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat ($x)]\<close>
+Hoare program (tmp_hoare) left:  \<open>PROG[x:=$x+1; z:=nat ($x); y:=$y]\<close>
+Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat ($x); y:=$y]\<close>
 
 Hoare config (tmp_hoare) left = left
 Hoare config (tmp_hoare) right = right
 
 lemma True proof
 
-  hoare invariant (tmp_hoare) start2: "INV2[$x1=$x2+1 \<and> $z1=$z2] :: (memory, memory) rinvariant"
+  hoare invariant (tmp_hoare) 
+    start2: "INV2[$x1=$x2+1 \<and> $z1=$z2] :: (memory, memory) rinvariant"
 
   have [hoare_invi]: "{start2 \<Rightarrow> $z1=$z2}"
     unfolding start2_inv_def by simp
@@ -125,16 +126,16 @@ lemma True proof
 
   hoare step1L: range 1 ~ \<emptyset> pre start2 post step1L = default
 
+  (* TODO: why does "apply untouched" not work? *)
   have [hoare_invi]: \<open>{step1L \<Rightarrow> $z1=$z2}\<close>
     using \<open>{start2 \<Rightarrow> $z1=$z2}\<close> apply wp by auto
-
-  (* have \<open>{start2 \<Rightarrow> $z1=$z2}\<close> in step1L *)
 
   have [hoare_invi]: "{step1L \<Rightarrow> $x1=$x2+2}"
     apply wp
     using start2_inv_def by auto
 
   hoare step1LR: range \<emptyset> ~ 1 pre step1L post step1LR = default
+(* TODO: pretty_range should include the \<emptyset> *)
 
   have bla [hoare_invi]: "{step1LR \<Rightarrow> $x1=$x2}"
     apply wp
@@ -146,15 +147,19 @@ lemma True proof
 
   hoare step2: range 2~2 pre step1LR post step2 = default
 
-  hoare preserve bla: \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> in step2
+  thm \<open>{step2 \<Rightarrow> $x1=$x2}\<close>
 
-  have [hoare_invi]: "{step2 \<Rightarrow> $x1=$x2}"
-    using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> by untouched
+  (* hoare preserve bla: \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> in step2 *)
+
+(*   have [hoare_invi]: "{step2 \<Rightarrow> $x1=$x2}"
+    using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> by untouched *)
 
   have [hoare_invi]: "{step2 \<Rightarrow> $z1=$z2}"
     apply wp
     using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close>
     by simp
+
+  hoare step3: range 3~3 pre step2 post step3 = default
 
 qed
 
