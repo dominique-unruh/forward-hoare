@@ -32,6 +32,7 @@ qed
 
 type_synonym ('mem,'var) expression = \<open>'mem \<Rightarrow> 'var\<close>
 type_synonym 'mem untyped_expression = \<open>('mem,'mem) expression\<close>
+type_synonym 'mem untyped_spmf_expression = \<open>('mem,'mem spmf) expression\<close>
 
 definition \<open>valid_var = (\<lambda>(f,S). \<exists>R. bij_betw f UNIV (S \<times> R))\<close> 
 definition "has_variables (_::'mem itself) (_::'val itself) \<longleftrightarrow> (\<exists>f::'mem\<Rightarrow>'val\<times>'mem. valid_var (f, UNIV))"
@@ -53,10 +54,22 @@ lemma dummy_untyped_var_valid: "valid_var dummy_untyped_var"
   apply (rule exI[of _ UNIV]) 
   apply (rule bij_betw_byWitness[of _ snd]) by auto
 
+(* TODO: do we use the spmf_var variants? *)
+definition "dummy_untyped_spmf_var = (\<lambda>x::'mem. (return_spmf undefined::'mem spmf,x), {return_spmf undefined::'mem spmf})"
+lemma dummy_untyped_spmf_var_valid: "valid_var dummy_untyped_spmf_var"
+  unfolding valid_var_def dummy_untyped_spmf_var_def apply auto
+  apply (rule exI[of _ UNIV]) 
+  apply (rule bij_betw_byWitness[of _ snd]) by auto
+
 typedef 'mem untyped_var = 
   "Collect valid_var :: (('mem\<Rightarrow>'mem\<times>'mem)\<times>'mem set) set"
   by (rule exI[of _ dummy_untyped_var], simp add: dummy_untyped_var_valid)
 setup_lifting type_definition_untyped_var
+
+typedef 'mem untyped_spmf_var =
+  "Collect valid_var :: (('mem\<Rightarrow>'mem spmf\<times>'mem)\<times>'mem spmf set) set"
+  by (rule exI[of _ dummy_untyped_spmf_var], simp add: dummy_untyped_spmf_var_valid)
+setup_lifting type_definition_untyped_spmf_var
 
 lemma 
   shows some_embedding_inj: "less_eq_card (UNIV::'a set) (UNIV::'b set) \<Longrightarrow> inj (some_embedding::'a\<Rightarrow>'b)" 
@@ -129,6 +142,12 @@ definition "mk_var_untyped_raw (f::'mem\<Rightarrow>'val \<times> 'mem) =
        range (some_embedding::'val\<Rightarrow>'mem))
       else dummy_untyped_var)"
 
+definition "mk_spmf_var_untyped_raw (f::'mem\<Rightarrow>'val spmf \<times> 'mem) =
+      (if valid_var (f, UNIV) then
+      (map_prod (map_spmf (some_embedding::'val\<Rightarrow>'mem)) id \<circ> f,
+       range (map_spmf (some_embedding::'val\<Rightarrow>'mem)))
+      else dummy_untyped_spmf_var)"
+
 lemma mk_var_untyped_raw_valid: 
   fixes f :: "'mem \<Rightarrow> 'val \<times> 'mem"
   shows "valid_var (mk_var_untyped_raw f)"
@@ -159,6 +178,39 @@ next
     by (simp add: i_def mk_var_untyped_raw_def)
 qed
 
+
+lemma mk_spmf_var_untyped_raw_valid: 
+  fixes f :: "'mem \<Rightarrow> 'val spmf \<times> 'mem"
+  shows "valid_var (mk_spmf_var_untyped_raw f)"
+proof (cases \<open>valid_var (f, UNIV)\<close>)
+  case False
+  then show ?thesis
+    unfolding mk_spmf_var_untyped_raw_def
+    using dummy_untyped_spmf_var_valid by auto
+next
+  case True
+  define i where "i = (some_embedding::'val\<Rightarrow>'mem)"
+  have "less_eq_card (UNIV::'val set) (UNIV::'var spmf set)"
+    sorry
+  also from True have "less_eq_card (UNIV::'val spmf set) (UNIV::'mem set)"
+    by (rule valid_var_less_eq_card)
+  finally have "inj i"
+    unfolding i_def
+    by (rule some_embedding_inj)
+  from True obtain R where bij_f: "bij_betw f UNIV (UNIV \<times> R)"
+    unfolding valid_var_def by auto
+  have bij_i: "bij_betw (map_prod (map_spmf i) id) (UNIV \<times> R) (range (map_spmf i) \<times> R)"
+    apply (rule bij_betw_map_prod)
+    using \<open>inj i\<close>
+    by (simp_all add: inj_on_imp_bij_betw option.inj_map pmf.inj_map)
+  from bij_f bij_i have "bij_betw (map_prod (map_spmf i) id \<circ> f) UNIV (range (map_spmf i) \<times> R)"
+    using bij_betw_trans by blast
+  then have \<open>valid_var (map_prod (map_spmf i) id \<circ> f, range (map_spmf i))\<close>
+    unfolding valid_var_def by auto
+  with True show ?thesis
+    by (simp add: i_def mk_spmf_var_untyped_raw_def)
+qed
+
 lift_definition mk_var_untyped :: "('mem,'val) var \<Rightarrow> 'mem untyped_var" is mk_var_untyped_raw
   by (simp add: mk_var_untyped_raw_valid)
 
@@ -179,9 +231,15 @@ proof -
     unfolding dummy_untyped_var_def by auto
 qed
 
-datatype 'mem instruction = SetRaw "'mem untyped_var" "'mem untyped_expression"
+datatype 'mem instruction = 
+  SetRaw "'mem untyped_var" "'mem untyped_expression"
+  | SampleRaw "'mem untyped_var" "'mem untyped_spmf_expression"
+
 definition Set :: "('mem,'val) var \<Rightarrow> ('mem,'val) expression \<Rightarrow> 'mem instruction" where
   "Set x e = SetRaw (mk_var_untyped x) ((some_embedding::'val\<Rightarrow>'mem) o e)"
+
+definition Sample :: "('mem,'val) var \<Rightarrow> ('mem,'val spmf) expression \<Rightarrow> 'mem instruction" where
+  "Sample x e = SampleRaw (mk_var_untyped x) (map_spmf (some_embedding::'val\<Rightarrow>'mem) o e)"
 
 type_synonym 'mem "program" = "'mem instruction list"
 
@@ -315,13 +373,19 @@ section \<open>Semantics\<close>
 
 fun semantics1 :: "'mem instruction \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
   "semantics1 (SetRaw x e) m = return_spmf (update_untyped_var x (e m) m)"
-(* TODO SampleRaw *)
+| "semantics1 (SampleRaw x e) m = map_spmf (\<lambda>a. update_untyped_var x a m) (e m)"
 
 lemma semantics1_Set[simp]:
   fixes x :: "('mem,'val) var" and a :: 'val
   shows "semantics1 (Set x e) m = return_spmf (update_var x (e m) m)"
   unfolding Set_def apply simp
   by (rule update_untyped_var)
+
+lemma semantics1_Sample[simp]:
+  fixes x :: "('mem,'val) var" and a :: 'val
+  shows "semantics1 (Sample x e) m = map_spmf (\<lambda>a. update_var x a m) (e m)"
+  unfolding Sample_def apply simp
+  by (smt map_spmf_cong o_def spmf.map_comp update_untyped_var)
 
 lemma semantics1_Set_invalid:
   fixes x :: "('mem,'val) var" and a :: 'val
@@ -339,6 +403,27 @@ proof (simp add: Set_def, transfer)
         (some_embedding (e m)) m = m"
     unfolding dummy_untyped_var_def mk_var_untyped_raw_def by auto
 qed
+
+lemma semantics1_Sample_invalid:
+  fixes x :: "('mem,'val) var" and a :: 'val
+  assumes "\<not> has_variables TYPE('mem) TYPE('val)"
+  shows "semantics1 (Sample x e) m = scale_spmf (weight_spmf (e m)) (return_spmf m)"
+proof (simp add: Sample_def, transfer)
+  fix x :: "'mem \<Rightarrow> 'val \<times> 'mem" and e :: "'mem\<Rightarrow>'val spmf" and m :: 'mem
+  from assms have invalid: "\<not> valid_var (x, UNIV)"
+    unfolding has_variables_def by auto
+  have *: \<open>inv (Pair undefined) (force_into (some_embedding a) {undefined}, m) = m\<close> for a :: 'val
+    using [[show_types, show_consts]]
+    by auto
+  with invalid show "map_spmf
+        (\<lambda>a. (case mk_var_untyped_raw x of (x, S) \<Rightarrow> \<lambda>a m. if valid_var (x, S) then inv x (force_into a S, snd (x m)) else m) a m)
+        (map_spmf some_embedding (e m)) =
+       scale_spmf (weight_spmf (e m)) (return_spmf m)"
+    using if_weak_cong[cong del]
+    unfolding dummy_untyped_var_def mk_var_untyped_raw_def spmf.map_comp 
+    by (auto simp: map_spmf_conv_bind_spmf bind_spmf_const o_def)
+qed
+
 
 fun semantics :: "'mem program \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
   "semantics [] m = return_spmf m"
@@ -398,6 +483,7 @@ definition "instructions_commute a b \<longleftrightarrow> semantics [a,b] = sem
 definition "independent_vars a b \<longleftrightarrow> (\<forall>x y mem.
    update_var b y (update_var a x mem) = update_var a x (update_var b y mem))"
 
+(* TODO: generalize using independent_of_prog or similar? Or add cases for Sample? *)
 lemma commute_indep:
   fixes a :: "('mem,'a) var" and b :: "('mem,'b) var"
   assumes "independent_of f a"
@@ -567,13 +653,15 @@ lemma join_hoare:
    leaves too much freedom to Isabelle and Isabelle is not forced to
    match the "invariant m" part of the conclusion of the rule
  *)
-lemma wp[hoare_wp add]: 
+(* TODO same for Sample / or drop *)
+lemma wp[hoare_wp add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
   assumes imp: "\<And>m. A m \<Longrightarrow> B (update_var x (e m) m)"
   shows "\<forall>m. invariant m \<longrightarrow> B m"
   using imp unfolding assms(1) postcondition_default_def by auto
 
+(* TODO same for Sample / or drop *)
 lemma wp_Set1[hoare_wp add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 ([Set x e],[]) A"
@@ -581,6 +669,7 @@ lemma wp_Set1[hoare_wp add]:
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
   using imp unfolding assms(1) postcondition_default2_def by auto
 
+(* TODO same for Sample / or drop *)
 lemma wp_Set2[hoare_wp add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 ([],[Set x e]) A"
@@ -598,12 +687,14 @@ lemma wp_generic[hoare_wp add]:
   using assms(2,3) unfolding assms(1) postcondition_default2_def 
   apply auto by metis
 
+(* TODO same for Sample *)
 lemma wp_Set_cons1:
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2"
   shows "\<forall>mem1 mem2. postcondition_default2 (Set x e # p1, p2) (\<lambda>m1 m2. M (update_var x (e m1) m1) m2) mem1 mem2 \<longrightarrow> B mem1 mem2"
   using assms unfolding postcondition_default2_def
   by auto
 
+(* TODO same for Sample *)
 lemma wp_Set_cons2:
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2"
   shows "\<forall>mem1 mem2. postcondition_default2 (p1, Set x e # p2) (\<lambda>m1 m2. M m1 (update_var x (e m2) m2)) mem1 mem2 \<longrightarrow> B mem1 mem2"
@@ -618,6 +709,11 @@ lemma wp_skip12:
 lemma independent_of_prog_Set_cons:
   assumes "independent_of A x"
   shows "independent_of_prog A (Set x e # P)"
+  sorry
+
+lemma independent_of_prog_Sample_cons:
+  assumes "independent_of A x"
+  shows "independent_of_prog A (Sample x e # P)"
   sorry
 
 lemma independent_of_prog_empty:
@@ -646,6 +742,7 @@ lemma untouchedLR[hoare_untouched add]:
   unfolding assms(1) postcondition_default2_def independent_of_prog_def
   apply auto by blast
 
+(* TODO: do we even want to keep "updated" tactic? If yes, add rules for Sample *)
 lemma updated[hoare_updated add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default [Set x e] A"
@@ -694,21 +791,28 @@ in
 
 nonterminal instruction_syntax_tmp_hoare
 syntax "_instruction_set_tmp_hoare" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_tmp_hoare" ("_ := _")
+syntax "_instruction_sample_tmp_hoare" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_tmp_hoare" ("_ <$ _")
 syntax "_instruction_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> 'a" ("INSTR[_]")
 (* syntax "_string_of_identifier" :: "id \<Rightarrow> 'a" *)
 
 translations "_instruction_tmp_hoare (_instruction_set_tmp_hoare x e)" 
           \<rightharpoonup> "CONST Set x (_expression_tmp_hoare e)"
-
+translations "_instruction_tmp_hoare (_instruction_sample_tmp_hoare x e)" 
+          \<rightharpoonup> "CONST Sample x (_expression_tmp_hoare e)"
 
 print_translation \<open>[
 (\<^const_syntax>\<open>Set\<close>, fn ctxt => fn [x,n] =>
   Const(\<^syntax_const>\<open>_instruction_tmp_hoare\<close>,dummyT) $
     (Const(\<^syntax_const>\<open>_instruction_set_tmp_hoare\<close>,dummyT) $ x $ n)
+  handle TERM("dest_literal_syntax",_) => raise Match),
+
+(\<^const_syntax>\<open>Sample\<close>, fn ctxt => fn [x,n] =>
+  Const(\<^syntax_const>\<open>_instruction_tmp_hoare\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_sample_tmp_hoare\<close>,dummyT) $ x $ n)
   handle TERM("dest_literal_syntax",_) => raise Match)
 ]\<close>
 
-term \<open>INSTR[x := $x+$y]\<close>
+term \<open>INSTR[x <$ return_spmf ($x+$y)]\<close>
 
 nonterminal "program_syntax_tmp_hoare"
 syntax "_program_cons_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> program_syntax_tmp_hoare \<Rightarrow> program_syntax_tmp_hoare" ("_; _")
@@ -719,6 +823,5 @@ translations "_program_tmp_hoare (_program_cons_tmp_hoare i is)" \<rightleftharp
 translations "_program_tmp_hoare (_program_single_tmp_hoare i)" \<rightleftharpoons> "[_instruction_tmp_hoare i]"
 
 term \<open>PROG[x := 0; x := $x+1]\<close>
-
 
 end

@@ -2,7 +2,7 @@ theory Test_Tmp_Hoare
   imports Tmp_Hoare
 begin
 
-record memory = mem_x :: int   mem_y :: "int \<Rightarrow> nat"   mem_z :: nat
+record memory = mem_x :: int   mem_y :: "real"   mem_z :: nat
 
 definition "x_raw (m::memory) = (mem_x m, m\<lparr>mem_x := 0\<rparr>)"
 lemma valid_x_raw: "valid_var (x_raw, UNIV)"
@@ -44,10 +44,10 @@ lemma valid_y_raw: "valid_var (y_raw, UNIV)"
   apply (rule bij_betw_byWitness[where f'="\<lambda>(v,m). m\<lparr>mem_y := v\<rparr>"])
   by auto
 
-lift_definition y :: "(memory,int\<Rightarrow>nat) var" is y_raw
+lift_definition y :: "(memory,real) var" is y_raw
   by (rule valid_y_raw)
 
-lemma [simp]: "has_variables TYPE(memory) TYPE(int\<Rightarrow>nat)"
+lemma [simp]: "has_variables TYPE(memory) TYPE(real)"
   using valid_y_raw by auto  
 
 lemma [simp]: "eval_var y m = mem_y m"
@@ -107,8 +107,8 @@ lemma [simp]:
 
 Hoare config (tmp_hoare) memory = memory
 
-Hoare program (tmp_hoare) left:  \<open>PROG[x:=$x+1; z:=nat ($x); y:=$y]\<close>
-Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat ($x); y:=$y]\<close>
+Hoare program (tmp_hoare) left:  \<open>PROG[x:=$x+1; z:=nat ($x); y <$ spmf_of_set {1,2}]\<close>
+Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat ($x); y <$ spmf_of_set {2,3}]\<close>
 
 Hoare config (tmp_hoare) left = left
 Hoare config (tmp_hoare) right = right
@@ -150,7 +150,10 @@ lemma True proof
     using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close>
     by simp
 
+  (* TODO: Use joint sample postcondition *)
   hoare step3: range 3~3 pre step2 post step3 = default
+
+  (* TODO: show \<open>{step3 \<Rightarrow> $y1+1=$y2}\<close> *)
 
   from \<open>{step3 \<Rightarrow> $x1=$x2}\<close> \<open>{step3 \<Rightarrow> $z1=$z2}\<close>
   have [hoare_invi]: "{step3 \<Rightarrow> $x1*$z1 = $x2*$z2}"

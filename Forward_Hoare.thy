@@ -52,13 +52,15 @@ ML_file "hoare_logic.ML"
 
 
 method_setup untouched =
-  \<open>Scan.succeed (Forward_Hoare.invariant_untouched_method)\<close> 
+  \<open>Scan.lift (Scan.optional (Parse.reserved "lax" >> K true) false)
+    >> Forward_Hoare.invariant_untouched_method\<close> 
   "Invariant is preserved"
 
 method_setup updated =
   \<open>Scan.succeed (fn ctxt => SIMPLE_METHOD' (Forward_Hoare.invariant_updated_tac ctxt))\<close> 
   "Variable is updated"
 
+(* TODO: also add lax option *)
 method_setup wp =
   \<open>Scan.succeed (fn ctxt => SIMPLE_METHOD' (Forward_Hoare.invariant_wp_tac ctxt))\<close> 
   "Weakest precondition"
