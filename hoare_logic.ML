@@ -15,7 +15,7 @@ val check_invariant: Proof.context -> term -> unit
 val read_range: options -> range option -> range context_parser
 val pretty_range: Proof.context -> range -> Pretty.T
 (* val read_invariant: Proof.context -> string -> term *)
-val postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table
+val postcondition_generators: (string * (Proof.context->term->term->(term*(Proof.context->tactic)) context_parser)) list
 (* join_hoare ctxt invariant1 range12 invariant2 range23 invariant3 thm12 thm23 *)
 val join_hoare: Proof.context -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
 (* valid_range program range *)
@@ -128,7 +128,7 @@ val logic : logic = {
   hoare_thm = hoare_thm,
   (* read_invariant = Logic.read_invariant, *)
   join_hoare = join_hoare,
-  postcondition_generators = Logic.postcondition_generators,
+  postcondition_generators = Symtab.make Logic.postcondition_generators,
   invariant_implication = invariant_implication,
   invariant_implication_syntax = Logic.invariant_implication,
   invariant_parse_translation = Logic.invariant_parse_translation,

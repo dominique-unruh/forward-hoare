@@ -93,7 +93,7 @@ type logic = {
   extract_range: Proof.context -> ex_range -> term,
   hoare_thm: Proof.context -> term -> term -> term -> term,
   join_hoare: Proof.context -> term -> ex_range -> term -> ex_range -> term -> thm -> thm -> (ex_range*thm),
-  postcondition_generators: (term->term->term*(Proof.context->tactic)) context_parser Symtab.table,
+  postcondition_generators: (Proof.context -> term -> term -> (term*(Proof.context->tactic)) context_parser) Symtab.table,
   invariant_implication: Proof.context -> term -> term -> term,
   invariant_implication_lhs: term -> term,
   invariant_implication_syntax: Proof.context -> term -> term -> term,
@@ -572,9 +572,8 @@ fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (
   val program_fragment = (#extract_range logic) ctxt range
   val precondition' = case get_invariant context precondition of
     SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
-  val make_post' = get_the_postcondition_generator logic make_post
-  val make_post' = parse_src (fn _ =>  "end of arguments to " ^ make_post) ctxt make_post' make_post_args
-  val (post,tac) = make_post' program_fragment (#const precondition')
+  val make_post' = get_the_postcondition_generator logic make_post ctxt program_fragment (#const precondition')
+  val (post,tac) = parse_src (fn _ =>  "end of arguments to " ^ make_post) ctxt make_post' make_post_args
   val _ = catch_internal_error (#binding logic) ("typechecking result of postcondition generator "^make_post)
             (Sign.cert_term (Proof_Context.theory_of ctxt)) post
   val (post,st) = add_invariant toolkit logic postcondition post st

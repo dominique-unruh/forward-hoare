@@ -157,15 +157,14 @@ lemma True proof
     using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close>
     by simp
 
-(* TODO: make global *)
-  have [simp]: "semantics [] = return_spmf"
-    by auto
-
-  (* TODO: Use joint sample postcondition *)
-  hoare' step3: range 3~3 pre step2 post step3 = default
+  hoare' step3: range 3~3 pre step2 post step3 = 
+        rnd \<open>\<lambda>m1 m2. map_spmf (\<lambda>x. (x,x+1)) (spmf_of_set {1,2})\<close>
     by auto
 
 (* TODO: show \<open>{step3 \<Rightarrow> $y1+1=$y2}\<close> *)
+(*   have \<open>{step3 \<Rightarrow> $y1+1=$y2}\<close>
+    apply wp
+ *)
 
   from \<open>{step3 \<Rightarrow> $x1=$x2}\<close> \<open>{step3 \<Rightarrow> $z1=$z2}\<close>
   have [hoare_invi]: "{step3 \<Rightarrow> $x1*$z1 = $x2*$z2}"

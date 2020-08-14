@@ -429,6 +429,9 @@ fun semantics :: "'mem program \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
   "semantics [] m = return_spmf m"
 | "semantics (c#p) m = bind_spmf (semantics1 c m) (semantics p)"
 
+lemma semantics_Nil[simp]: "semantics [] = return_spmf"
+  by auto
+
 type_synonym 'mem "invariant" = "'mem \<Rightarrow> bool"
 type_synonym ('m1,'m2) "rinvariant" = "'m1 \<Rightarrow> 'm2 \<Rightarrow> bool"
 
@@ -450,8 +453,10 @@ definition postcondition_default2 :: "'mem1 program * 'mem2 program \<Rightarrow
       \<exists>m1' m2'. I m1' m2' \<and> m1 \<in> set_spmf (semantics p1 m1')
                           \<and> m2 \<in> set_spmf (semantics p2 m2'))"
 
-definition postcondition_joint_sample :: "('mem1 \<Rightarrow> 'mem2 \<Rightarrow> ('mem1*'mem2) set) \<Rightarrow> ('mem1,'mem2) rinvariant \<Rightarrow> ('mem1,'mem2) rinvariant" where
-  "postcondition_joint_sample j I m1 m2 = (\<exists>m1' m2'. I m1' m2' \<and> (m1,m2) \<in> j m1' m2')"
+definition postcondition_rnd :: "('mem1 \<Rightarrow> 'mem2 \<Rightarrow> ('x1*'x2) spmf) \<Rightarrow> ('mem1,'x1) var \<Rightarrow> ('mem2,'x2) var \<Rightarrow> ('mem1,'mem2) rinvariant \<Rightarrow> ('mem1,'mem2) rinvariant" where
+  "postcondition_rnd j x1 x2 I m1 m2 = 
+    (\<exists>m1' m2'. I m1' m2' \<and> (m1,m2) \<in> 
+      (\<lambda>(v1,v2). (update_var x1 v1 m1', update_var x2 v2 m2')) ` set_spmf (j m1' m2'))"
 
 lemma postcondition_default_valid:
   "hoare A p (postcondition_default p A)"
@@ -529,14 +534,34 @@ proof -
     by (auto simp: postcondition_default2_def rhoare_def case_prod_beta pred_spmf_def intro!: rel_spmfI \<mu>1 \<mu>2 supp)
 qed
 
-lemma postcondition_joint_sample_valid:
-  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf fst (\<mu> m1 m2) = semantics (fst p) m1"
-  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf snd (\<mu> m1 m2) = semantics (snd p) m2"
-  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> set_spmf (\<mu> m1 m2) \<subseteq> j m1 m2"
-  shows "rhoare A (fst p) (snd p) (postcondition_joint_sample j A)"
-  using assms
-  apply (auto simp: rhoare_def postcondition_joint_sample_def pred_spmf_def case_prod_beta intro!: exI[of _ "\<mu> _ _"] rel_spmfI)
-  by blast
+lemma postcondition_rnd_valid:
+  assumes p_def: "p = ([Sample x1 e1], [Sample x2 e2])"
+  (* assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf fst (\<mu> m1 m2) = semantics (fst p) m1" *)
+  (* assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf snd (\<mu> m1 m2) = semantics (snd p) m2" *)
+  (* assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> set_spmf (\<mu> m1 m2) \<subseteq> j m1 m2" *)
+  assumes fst: "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf fst (\<mu> m1 m2) = e1 m1"
+  assumes snd: "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf snd (\<mu> m1 m2) = e2 m2"
+  shows "rhoare A (fst p) (snd p) (postcondition_rnd \<mu> x1 x2 A)"
+proof (unfold rhoare_def, rule, rule, rule)
+  fix m1 m2 assume A: "A m1 m2"
+  define \<mu>' where "\<mu>' = map_spmf (\<lambda>(v1, v2). (update_var x1 v1 m1, update_var x2 v2 m2)) (\<mu> m1 m2)"
+
+  have "(m1', m2') \<in> set_spmf \<mu>' \<Longrightarrow> postcondition_rnd \<mu> x1 x2 A m1' m2'" for m1' m2'
+    unfolding postcondition_rnd_def \<mu>'_def
+    apply (rule exI[of _ m1], rule exI[of _ m2])
+    using \<open>A m1 m2\<close> by auto
+
+  moreover have "map_spmf fst \<mu>' = semantics (fst p) m1"
+    unfolding \<mu>'_def p_def 
+    by (simp add: fst[OF A, symmetric] spmf.map_comp o_def case_prod_beta)
+
+  moreover have "map_spmf snd \<mu>' = semantics (snd p) m2"
+    unfolding \<mu>'_def p_def 
+    by (simp add: snd[OF A, symmetric] spmf.map_comp o_def case_prod_beta)
+
+  ultimately show "rel_spmf (postcondition_rnd \<mu> x1 x2 A) (semantics (fst p) m1) (semantics (snd p) m2)"
+    by (rule rel_spmfI[where pq=\<mu>'])
+qed
 
 definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
 abbreviation (input) "independentL_of e x \<equiv> (\<And>m2. independent_of (\<lambda>m1. e m1 m2) x)"
@@ -819,6 +844,19 @@ lemma untouchedLR[hoare_untouched add]:
   using imp indepL indepR
   unfolding assms(1) postcondition_default2_def independent_of_prog_def
   apply auto by blast
+
+
+lemma untouched_rnd[hoare_untouched add]: 
+  fixes x :: "('mem,'val) var"
+  assumes "invariant \<equiv> postcondition_rnd \<mu> x y A"
+  assumes imp: "\<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
+  assumes indepL: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentL_of B x"
+  assumes indepR: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentR_of B y"
+  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
+  using imp indepL indepR
+  unfolding assms(1) postcondition_default2_def independent_of_prog_def
+  apply auto
+  sorry
 
 (* TODO: do we even want to keep "updated" tactic? If yes, add rules for Sample *)
 lemma updated[hoare_updated add]:

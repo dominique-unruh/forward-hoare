@@ -54,6 +54,7 @@ structure Demo_Hoare_Logic = Hoare_Logic(
     \<^const>\<open>pc_imp\<close> $ t1 $ t2
 
   fun invariant_implication_lhs (Const(\<^const_name>\<open>pc_imp\<close>,_) $ t1 $ _) = t1
+    | invariant_implication_lhs t = raise TERM("invariant_implication_lhs", [t])
 
   fun extract_range ctxt ((program,start,endd):range) : term =
     get_my_program ctxt program |> HOLogic.dest_list |> drop start |> take (endd-start) |> HOLogic.mk_list \<^typ>\<open>instruction\<close>
@@ -80,7 +81,7 @@ structure Demo_Hoare_Logic = Hoare_Logic(
       (post, tac)
     end
 
-  fun postcondition_pick i program_fragment pre = let
+  fun postcondition_pick program_fragment pre i = let
     val instruction = case HOLogic.dest_list program_fragment of
       [i] => i | _ => error "Program must be one instruction long"
     val post = \<^const>\<open>postcondition_pick\<close> $ instruction $ HOLogic.mk_number \<^typ>\<open>int\<close> i $ pre
@@ -91,9 +92,9 @@ structure Demo_Hoare_Logic = Hoare_Logic(
   
   (* fun program_morphism _ prog = prog *)
 
-  val postcondition_generators = Symtab.make [
-    ("trivial", Scan.succeed postcondition_trivial |> Scan.lift),
-    ("pick", Scan.lift Parse.int >> postcondition_pick)
+  val postcondition_generators = [
+    ("trivial", fn _ => fn prog => fn pre => Scan.succeed (postcondition_trivial prog pre) |> Scan.lift),
+    ("pick", fn _ => fn prog => fn pre => Scan.lift Parse.int >> (postcondition_pick prog pre))
   ]
 
   val join_hoare_goal = 

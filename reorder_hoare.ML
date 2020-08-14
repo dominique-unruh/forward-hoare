@@ -106,8 +106,8 @@ structure Logic = Hoare_Logic(
       (post, tac)
     end
 
-  val postcondition_generators = Symtab.make [
-    ("default", Scan.succeed postcondition_default |> Scan.lift)]
+  val postcondition_generators = [
+    ("default", fn _ => fn prog => fn pre => Scan.succeed (postcondition_default prog pre) |> Scan.lift)]
 
   fun extract_range ctxt (prog,range) = let
     val prog' = get_my_program ctxt prog |> HOLogic.dest_list

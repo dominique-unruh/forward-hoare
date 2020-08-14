@@ -36,6 +36,10 @@ fun dest_invariant2T _ (Type(\<^type_name>\<open>fun\<close>, [T, (Type(\<^type_
   | dest_invariant2T caller T = raise TYPE(caller^": dest_invariant2T", [T], [])
 
 fun varT T T' = Type(\<^type_name>\<open>var\<close>, [T,T'])
+fun dest_varT _ (Type(\<^type_name>\<open>var\<close>, [T,T'])) = (T,T')
+  | dest_varT caller T = raise TYPE(caller^": dest_varT", [T], [])
+
+fun spmfT T = Type(\<^type_name>\<open>pmf\<close>, [Type(\<^type_name>\<open>option\<close>, [T])])
 
 fun append_conv ct = 
   (Conv.rewr_conv @{thm append_conv0}
@@ -255,8 +259,37 @@ structure Logic1 = Hoare_Logic(
     else
       postcondition_default1 program_fragment pre
 
-  val postcondition_generators = Symtab.make [
-    ("default", Scan.succeed postcondition_default |> Scan.lift)]
+  fun postcondition_rnd_parse ctxt program_fragment pre = let
+    val (prog1,prog2) = HOLogic.dest_prod program_fragment
+                        handle TERM _ => error "Postcondition rnd only works for relational Hoare judgments"
+    val prog1s = HOLogic.dest_list prog1 |> the_single
+                 handle TERM _ => error "Left program must consist of a single statement"
+                 handle List.Empty => error "Left program must consist of a single statement"
+    val prog2s = HOLogic.dest_list prog2 |> the_single
+                 handle TERM _ => error "Right program must consist of a single statement"
+                 handle List.Empty => error "right program must consist of a single statement"
+    val (x1,e1) = case prog1s of (Const(\<^const_name>\<open>Sample\<close>, _) $ x1 $ e1) => (x1,e1)
+              | _ => error "Left program must consist of a Sample statement"
+    val (x2,e2) = case prog1s of (Const(\<^const_name>\<open>Sample\<close>, _) $ x2 $ e2) => (x2,e2)
+              | _ => error "Right program must consist of a Sample statement"
+    val (mem1T,x1T) = fastype_of x1 |> dest_varT "postcondition_rnd_parse"
+    val (mem2T,x2T) = fastype_of x1 |> dest_varT "postcondition_rnd_parse"
+    fun tac ctxt = resolve_tac ctxt @{thms postcondition_rnd_valid} 1
+              THEN resolve_tac ctxt @{thms refl} 1
+    fun mk_postcondition coupling_str = let
+      val couplingT = mem1T --> mem2T --> (HOLogic.mk_prodT (x1T,x2T) |> spmfT)
+      val coupling = read_term_typed ctxt couplingT coupling_str
+      val pc_const = Const(\<^const_name>\<open>postcondition_rnd\<close>, 
+            couplingT --> varT mem1T x1T --> varT mem2T x2T
+                      --> invariant2T mem1T mem2T --> invariant2T mem1T mem2T)
+      val pc = pc_const $ coupling $ x1 $ x2 $ pre
+      in (pc,tac) end
+    in Scan.lift Parse.term >> mk_postcondition end
+
+  val postcondition_generators = [
+    ("default", fn _ => fn prog => fn pre => Scan.succeed (postcondition_default prog pre) |> Scan.lift),
+    ("rnd", postcondition_rnd_parse)
+    ]
 
   fun extract_range ctxt (Range (progname,range)) = let
         val prog = get_my_program ctxt progname
