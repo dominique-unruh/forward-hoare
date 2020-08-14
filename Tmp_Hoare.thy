@@ -435,11 +435,10 @@ type_synonym ('m1,'m2) "rinvariant" = "'m1 \<Rightarrow> 'm2 \<Rightarrow> bool"
 definition "hoare" :: "'mem invariant \<Rightarrow> 'mem program \<Rightarrow> 'mem invariant \<Rightarrow> bool" where
   "hoare A p B \<longleftrightarrow> (\<forall>m. A m \<longrightarrow> pred_spmf B (semantics p m))"
 
-definition "is_coupling \<mu> \<mu>1 \<mu>2 \<longleftrightarrow> map_spmf fst \<mu> = \<mu>1 \<and> map_spmf snd \<mu> = \<mu>2"
+(* definition "is_coupling \<mu> \<mu>1 \<mu>2 \<longleftrightarrow> map_spmf fst \<mu> = \<mu>1 \<and> map_spmf snd \<mu> = \<mu>2" *)
 
 definition "rhoare" :: "('m1,'m2) rinvariant \<Rightarrow> 'm1 program \<Rightarrow> 'm2 program \<Rightarrow> ('m1,'m2) rinvariant \<Rightarrow> bool" where
-  "rhoare A p1 p2 B \<longleftrightarrow> (\<forall>m1 m2. A m1 m2 \<longrightarrow> (\<exists>\<mu>.
-    is_coupling \<mu> (semantics p1 m1) (semantics p2 m2) \<and> pred_spmf (case_prod B) \<mu>))"
+  "rhoare A p1 p2 B \<longleftrightarrow> (\<forall>m1 m2. A m1 m2 \<longrightarrow> rel_spmf B (semantics p1 m1) (semantics p2 m2))"
 
 section \<open>Support for reasoning\<close>
 
@@ -451,14 +450,93 @@ definition postcondition_default2 :: "'mem1 program * 'mem2 program \<Rightarrow
       \<exists>m1' m2'. I m1' m2' \<and> m1 \<in> set_spmf (semantics p1 m1')
                           \<and> m2 \<in> set_spmf (semantics p2 m2'))"
 
+definition postcondition_joint_sample :: "('mem1 \<Rightarrow> 'mem2 \<Rightarrow> ('mem1*'mem2) set) \<Rightarrow> ('mem1,'mem2) rinvariant \<Rightarrow> ('mem1,'mem2) rinvariant" where
+  "postcondition_joint_sample j I m1 m2 = (\<exists>m1' m2'. I m1' m2' \<and> (m1,m2) \<in> j m1' m2')"
+
 lemma postcondition_default_valid:
   "hoare A p (postcondition_default p A)"
   unfolding postcondition_default_def hoare_def
   using pred_spmf_def by blast
 
+lemma coupling_exists:
+  assumes "weight_spmf \<mu>1 = weight_spmf \<mu>2"
+  shows "\<exists>\<mu>. map_spmf fst \<mu> = \<mu>1 \<and> map_spmf snd \<mu> = \<mu>2"
+proof (cases "weight_spmf \<mu>1 = 0")
+  case True
+  with assms have "weight_spmf \<mu>2 = 0"
+    by simp
+  with True have \<mu>1: "\<mu>1 = return_pmf None" and \<mu>2: "\<mu>2 = return_pmf None"
+    using weight_spmf_eq_0 by auto
+  show ?thesis
+    apply (rule exI[of _ "return_pmf None"])
+    by (auto simp: \<mu>1 \<mu>2)
+next
+  case False
+  define w \<mu> 
+    where "w = weight_spmf \<mu>1"
+      and "\<mu> = scale_spmf (inverse w) (pair_spmf \<mu>1 \<mu>2)"
+  have w_def': "w = weight_spmf \<mu>2"
+    using assms w_def by blast
+  have [simp]: "w > 0" and [simp]: "w \<le> 1"
+    unfolding w_def using False
+    using zero_less_measure_iff apply blast
+    by (simp add: weight_spmf_le_1)
+  have *: "inverse w * max 0 (min (inverse w) w) = 1"
+    using \<open>w > 0\<close> \<open>w \<le> 1\<close>
+    by (smt left_inverse one_le_inverse)
+    
+  have "map_spmf fst \<mu> = \<mu>1"
+    unfolding \<mu>_def map_scale_spmf map_fst_pair_spmf
+    apply (subst scale_scale_spmf)
+    unfolding w_def[symmetric] w_def'[symmetric] *
+    by simp
+
+  moreover have "map_spmf snd \<mu> = \<mu>2"
+    unfolding \<mu>_def map_scale_spmf map_snd_pair_spmf
+    apply (subst scale_scale_spmf)
+    unfolding w_def[symmetric] w_def'[symmetric] *
+    by simp
+
+  ultimately show ?thesis 
+    by auto
+qed
+
+(* lemma coupling_supp:
+  assumes "is_coupling \<mu> \<mu>1 \<mu>2"
+  shows "set_spmf \<mu> \<subseteq> set_spmf \<mu>1 \<times> set_spmf \<mu>2"
+  using assms
+  by (auto simp add: is_coupling_def rev_image_eqI) *)
+
 lemma postcondition_default2_valid:
-  "rhoare A (fst p) (snd p) (postcondition_default2 p A)"
-  sorry
+  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> weight_spmf (semantics (fst p) m1) = weight_spmf (semantics (snd p) m2)"
+  shows "rhoare A (fst p) (snd p) (postcondition_default2 p A)"
+proof -
+  obtain \<mu> 
+    where \<mu>1: "map_spmf fst (\<mu> m1 m2) = semantics (fst p) m1"
+      and \<mu>2: "map_spmf snd (\<mu> m1 m2) = semantics (snd p) m2" 
+    if "A m1 m2" for m1 m2
+    apply atomize_elim 
+    using coupling_exists[OF assms]
+    by (auto simp: all_conj_distrib[symmetric] intro!: choice)
+
+  have supp: "m1' \<in> set_spmf (semantics (fst p) m1)" 
+     "m2' \<in> set_spmf (semantics (snd p) m2)"
+    if "(m1', m2') \<in> set_spmf (\<mu> m1 m2)" and "A m1 m2" for m1' m2' m1 m2
+    unfolding \<mu>1[OF \<open>A m1 m2\<close>, symmetric] \<mu>2[OF \<open>A m1 m2\<close>, symmetric]
+    using that by force+
+
+  show ?thesis
+    by (auto simp: postcondition_default2_def rhoare_def case_prod_beta pred_spmf_def intro!: rel_spmfI \<mu>1 \<mu>2 supp)
+qed
+
+lemma postcondition_joint_sample_valid:
+  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf fst (\<mu> m1 m2) = semantics (fst p) m1"
+  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf snd (\<mu> m1 m2) = semantics (snd p) m2"
+  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> set_spmf (\<mu> m1 m2) \<subseteq> j m1 m2"
+  shows "rhoare A (fst p) (snd p) (postcondition_joint_sample j A)"
+  using assms
+  apply (auto simp: rhoare_def postcondition_joint_sample_def pred_spmf_def case_prod_beta intro!: exI[of _ "\<mu> _ _"] rel_spmfI)
+  by blast
 
 definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
 abbreviation (input) "independentL_of e x \<equiv> (\<And>m2. independent_of (\<lambda>m1. e m1 m2) x)"
