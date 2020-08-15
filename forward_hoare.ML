@@ -100,7 +100,8 @@ type logic = {
   invariant_parse_translation: Proof.context -> term -> term -> term,
   default_options: ex_options,
   set_option: string -> string -> Proof.context -> morphism -> ex_options -> ex_options,
-  subgoal_tactics: (Proof.context -> int -> tactic) Symtab.table
+  subgoal_tactics: (Proof.context -> int -> tactic) Symtab.table,
+  invariant_consequences: thm -> Proof.context -> thm list
 }
 
 fun name_of_logic ({binding,...}:logic) = Binding.name_of binding
@@ -252,6 +253,37 @@ fun catch_internal_error logic func f x = f x
      val name = logic |> string_of_binding_logic
    in raise TYPE("Internal error " ^ func ^ " (logic " ^ name ^ "): " ^ msg, Ts, ts) end
 
+
+fun add_known_implication (invariant:invariant) (implication:thm) context : Context.generic = let
+  (* val context = #context toolkit st *)
+  (* val invariant = get_the_invariant context invariant_name *)
+  val logic = #logic invariant |> get_the_logic (Context.theory_of context)
+  val const = #invariant_implication_lhs logic (implication |> Thm.prop_of |> bool_of_prop)
+  val _ = if const = #const invariant then ()
+          else raise THM ("add_known_implication: implication incorrect for invariant "^ name_of_invariant invariant, 1, [implication])
+(*   fun update m = let
+    val implication' = Morphism.thm m implication
+    in map_invariants (Symtab.map_entry invariant_name (map_known_implications 
+            (fn is => implication'::is))) end
+  val st = #declaration toolkit update st *)
+in map_invariants (Symtab.map_entry (name_of_invariant invariant) (map_known_implications 
+            (fn is => implication::is))) context end
+
+fun declare_invariant_consequences (toolkit:'a toolkit) (logic:logic) (invariant:invariant) (st:'a) = let
+  val ctxt = #context toolkit st |> Context.proof_of
+  val conseqs = #invariant_consequences logic (#def_thm invariant) ctxt
+  val _ = if not (null conseqs) then 
+               (tracing' (fn _ => "Registering consequences:");
+               tracing' (fn _ => conseqs |> map (fn thm => Syntax.pretty_term ctxt (Thm.prop_of thm))
+                            |> Pretty.commas |> Pretty.block |> Pretty.string_of))
+          else ()
+  fun declare conseq st = let 
+    val st = #note toolkit Binding.empty conseq st
+    val st = #declaration toolkit (fn m => add_known_implication invariant (Morphism.thm m conseq)) st
+    in st end
+  val st = fold declare conseqs st
+  in st end
+
 fun add_invariant (toolkit:'st toolkit) (logic:logic) binding (invariant:term) st : invariant * 'st = let
   fun bind suffix = Binding.suffix_name suffix binding
   val (invariant_const,thm,st) = 
@@ -366,7 +398,8 @@ fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : '
   val _ = #check_invariant logic' ctxt term
   val _ = tracing ("Declaring invariant "^ string_of_binding_invariant name ^ " in logic " ^ string_of_binding_logic (#binding logic'))
   val st = set_current_logic_command toolkit logic' st
-  val (_,st) = add_invariant toolkit logic' name term st
+  val (invariant,st) = add_invariant toolkit logic' name term st
+  val st = declare_invariant_consequences toolkit logic' invariant st
 in st end
 
 fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
@@ -412,21 +445,6 @@ fun get_invariant_from_implication (ctxt:Proof.context) (t:term) = let
         handle TERM _ => NONE | TYPE _ => NONE | Match => NONE)
   in inv |> the' (fn _ => "Could not identify invariant in the lhs of " ^ Syntax.string_of_term ctxt t) end
 
-
-fun add_known_implication (invariant:invariant) (implication:thm) context : Context.generic = let
-  (* val context = #context toolkit st *)
-  (* val invariant = get_the_invariant context invariant_name *)
-  val logic = #logic invariant |> get_the_logic (Context.theory_of context)
-  val const = #invariant_implication_lhs logic (implication |> Thm.prop_of |> bool_of_prop)
-  val _ = if const = #const invariant then ()
-          else raise THM ("add_known_implication: implication incorrect for invariant "^ name_of_invariant invariant, 1, [implication])
-(*   fun update m = let
-    val implication' = Morphism.thm m implication
-    in map_invariants (Symtab.map_entry invariant_name (map_known_implications 
-            (fn is => implication'::is))) end
-  val st = #declaration toolkit update st *)
-in map_invariants (Symtab.map_entry (name_of_invariant invariant) (map_known_implications 
-            (fn is => implication::is))) context end
 
 fun add_known_implication_auto (implication:thm) context : Context.generic = let
   val ctxt = Context.proof_of context

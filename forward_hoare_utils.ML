@@ -51,5 +51,8 @@ fun invariant_parse_translation _ _ t = t
 (* Default implementation *)
 val subgoal_tactics: (string * (Proof.context -> int -> tactic)) list = []
 
+(* Default implementation *)
+fun invariant_consequences _ _ = []
+
 end
 end

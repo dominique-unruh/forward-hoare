@@ -118,11 +118,8 @@ lemma True proof
   hoare invariant (tmp_hoare) 
     start2: "INV2[$x1=$x2+1 \<and> $z1=$z2] :: (memory, memory) rinvariant"
 
-  have [hoare_invi]: "{start2 \<Rightarrow> $z1=$z2}"
-    unfolding start2_inv_def by simp
-
-  (* TODO should work *)
-  (* thm \<open>{start2 \<Rightarrow> $x1=$x2}\<close> *)
+  thm \<open>{start2 \<Rightarrow> $x1=$x2+1}\<close>
+  thm \<open>{start2 \<Rightarrow> $z1=$z2}\<close>
 
   hoare' step1L: range 1 ~ \<emptyset> pre start2 post step1L = default
     (* TODO: should be automatic *)
@@ -132,10 +129,13 @@ lemma True proof
     apply wp
     using start2_inv_def by auto
 
+(* TODO: why does this make preservation diverge? *)
+  note xxx = mk_invariant_consequence2[OF step1L_inv_def]
+  (* note xxx[hoare_invi] *)
+
   hoare' step1LR: range \<emptyset> ~ 1 pre step1L post step1LR = default
     (* TODO: should be automatic *)
     by auto
-
 (* TODO: pretty_range should include the \<emptyset> *)
 
   have bla [hoare_invi]: "{step1LR \<Rightarrow> $x1=$x2}"
@@ -146,11 +146,6 @@ lemma True proof
   hoare' step2: range 2~2 pre step1LR post step2 = default
     (* TODO: should be automatic *)
     by auto
-
-   (* hoare preserve bla: \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> in step2  *)
-
-(*   have [hoare_invi]: "{step2 \<Rightarrow> $x1=$x2}"
-    using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close> by untouched *)
 
   have [hoare_invi]: "{step2 \<Rightarrow> $z1=$z2}"
     apply wp

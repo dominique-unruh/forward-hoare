@@ -181,6 +181,18 @@ fun independence_tac_step ctxt = DETERM' (match_tac ctxt (@{thms
 
 fun independence_tac ctxt = REPEAT_ALL_NEW (independence_tac_step ctxt)
 
+fun split_invariant_implications _ impl = let
+  fun split1 impl = Forward_Hoare.filter_OF 
+    @{thms split_invariant_implication_conj1 split_invariant_implication_conj2
+           split_invariant_implication_all1 split_invariant_implication_all2
+           split_invariant_implication_ball1 split_invariant_implication_ball2
+           split_invariant_implication_imp1 split_invariant_implication_imp2
+      } [impl]
+  fun split impl = case split1 impl of 
+    [] => [impl]
+    | impls => maps split impls
+  in split impl end
+
 
 structure Logic1 = Hoare_Logic(
   val binding = \<^binding>\<open>tmp_hoare\<close>
@@ -397,7 +409,11 @@ structure Logic1 = Hoare_Logic(
     then tr_EXPR2_like HOLogic.boolT ctxt t
     else tr_EXPR_like HOLogic.boolT ctxt t
 
- val subgoal_tactics = [("wp_tac",wp_tac),("independence_tac",independence_tac)]
+  fun invariant_consequences thm ctxt = 
+    Forward_Hoare.filter_OF @{thms mk_invariant_consequence1 mk_invariant_consequence2} [thm]
+    |> maps (split_invariant_implications ctxt)
+
+  val subgoal_tactics = [("wp_tac",wp_tac),("independence_tac",independence_tac)]
 
 )
 

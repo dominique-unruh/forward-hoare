@@ -936,6 +936,57 @@ lemma updatedR[hoare_updated add]:
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m2 = e m2"
   using assms unfolding assms postcondition_default2_def independent_of_def by auto
 
+lemma mk_invariant_consequence1:
+  assumes "A \<equiv> B"
+  shows "\<forall>m. A m \<longrightarrow> B m"
+  using assms by auto
+
+lemma mk_invariant_consequence2:
+  assumes "A \<equiv> B"
+  shows "\<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
+  using assms by auto
+
+lemma split_invariant_implication_conj1:
+  assumes "\<forall>m. A m \<longrightarrow> (B m \<and> B' m)"
+  shows "\<forall>m. A m \<longrightarrow> B m" and "\<forall>m. A m \<longrightarrow> B' m"
+  using assms by auto
+
+lemma split_invariant_implication_conj2:
+  assumes "\<forall>m1 m2. A m1 m2 \<longrightarrow> (B m1 m2 \<and> B' m1 m2)"
+  shows "\<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2" and "\<forall>m1 m2. A m1 m2 \<longrightarrow> B' m1 m2"
+  using assms by auto
+
+lemma split_invariant_implication_all1:
+  assumes "\<forall>m. A m \<longrightarrow> (\<forall>x. B x m)"
+  shows "\<forall>m. A m \<longrightarrow> B x m"
+  using assms by auto
+
+lemma split_invariant_implication_all2:
+  assumes "\<forall>m1 m2. A m1 m2 \<longrightarrow> (\<forall>x. B x m1 m2)"
+  shows "\<forall>m1 m2. A m1 m2 \<longrightarrow> B x m1 m2"
+  using assms by auto
+
+lemma split_invariant_implication_ball1:
+  assumes "\<forall>m. A m \<longrightarrow> (\<forall>x\<in>M m. B x m)"
+  shows "\<forall>m. A m \<longrightarrow> (x \<in> M m \<longrightarrow> B x m)"
+  using assms by auto
+
+lemma split_invariant_implication_ball2:
+  assumes "\<forall>m1 m2. A m1 m2 \<longrightarrow> (\<forall>x\<in>M m1 m2. B x m1 m2)"
+  shows "\<forall>m1 m2. A m1 m2 \<longrightarrow> (x \<in> M m1 m2 \<longrightarrow> B x m1 m2)"
+  using assms by auto
+
+
+lemma split_invariant_implication_imp1:
+  assumes "\<forall>m. A m \<longrightarrow> (C \<longrightarrow> B m)"
+  shows "C \<Longrightarrow> \<forall>m. A m \<longrightarrow> B m"
+  using assms by auto
+
+lemma split_invariant_implication_imp2:
+  assumes "\<forall>m1 m2. A m1 m2 \<longrightarrow> (C \<longrightarrow> B m1 m2)"
+  shows "C \<Longrightarrow> \<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
+  using assms by auto
+
 subsection \<open>Concrete syntax for programs\<close>
 
 syntax "_expression_tmp_hoare" :: "'a \<Rightarrow> 'a" ("EXPR[_]")

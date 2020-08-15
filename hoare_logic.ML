@@ -18,11 +18,6 @@ val pretty_range: Proof.context -> range -> Pretty.T
 val postcondition_generators: (string * (Proof.context->term->term->(term*(Proof.context->tactic)) context_parser)) list
 (* join_hoare ctxt invariant1 range12 invariant2 range23 invariant3 thm12 thm23 *)
 val join_hoare: Proof.context -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
-(* valid_range program range *)
-(* val valid_range: term -> range -> bool *)
-(* extract_range range
-Contract: return value must not change
- *)
 val extract_range: Proof.context -> range -> term
 (* hoare_thm pre prog post *)
 val hoare_thm: Proof.context -> term -> term -> term -> term
@@ -35,6 +30,7 @@ val default_options: options
 (* set_option name content ctxt m options *)
 val set_option: string -> string -> Proof.context -> morphism -> options -> options
 val subgoal_tactics: (string * (Proof.context -> int -> tactic)) list
+val invariant_consequences : thm -> Proof.context -> thm list
 end
 
 signature HOARE_LOGIC =
@@ -135,7 +131,8 @@ val logic : logic = {
   invariant_implication_lhs = Logic.invariant_implication_lhs,
   default_options = default_options,
   set_option = set_option,
-  subgoal_tactics = Symtab.make Logic.subgoal_tactics
+  subgoal_tactics = Symtab.make Logic.subgoal_tactics,
+  invariant_consequences = Logic.invariant_consequences
 }
 
 val _ = Logic.this_logic_reference := SOME logic
