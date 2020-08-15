@@ -169,17 +169,37 @@ fun wp_tac ctxt = (* print_subgoal_tac ctxt "wp_tac" THEN' *) resolve_tac ctxt @
 
 fun DETERM' tac i = DETERM (tac i)
 
-val independence_split_tac = Forward_Hoare_Utils.no_match_tactic \<^context> 1 "independent_of (\<lambda>a b. b) _" 
-  (fn ctxt => match_tac ctxt @{thms independent_of_split})
+fun independence_split_tac ctxt = SUBGOAL (fn (t,i) => let
+  val (x,T,a,b) = case bool_of_prop' 0 t of Const(\<^const_name>\<open>independent_of\<close>,_) $ Abs(x,T, a $ b) $ _ => (x,T,a,b)
+                    | _ => raise Match
+(* val _ = \<^print> (x,T,a,b) *)
+  val a' = Abs(x,T,a) |> Thm.cterm_of ctxt
+  val b' = Abs(x,T,b) |> Thm.cterm_of ctxt
+  val rule = Drule.infer_instantiate ctxt 
+                  [(("a",0),a'),(("b",0),b')] @{thm independent_of_split}  
+(* val _ = \<^print> rule *)
+  in resolve_tac ctxt [rule] i end
+  handle Match => no_tac)
+(*   (fn ctxt => match_tac ctxt @{thms independent_of_split})
+  |> Forward_Hoare_Utils.no_match_tactic \<^context> 1 "independent_of (\<lambda>a b. b) _"
+  |> Forward_Hoare_Utils.no_match_tactic \<^context> 2 "independent_of (\<lambda>m. m) _" *)
 
-fun independence_tac_step ctxt = DETERM' (match_tac ctxt (@{thms 
+fun print_subgoal_tac ctxt = SUBGOAL (fn (t,i) => 
+  (tracing (string_of_int i ^ ": " ^ Syntax.string_of_term ctxt t); all_tac))
+
+fun independence_tac_step ctxt = 
+  (* print_subgoal_tac ctxt THEN' *)
+  DETERM' (match_tac ctxt (@{thms 
   independent_of_const independent_of_var
   independent_of_prog_Set_cons independent_of_prog_Sample_cons
   independent_of_prog_empty}
      @ Named_Theorems.get ctxt \<^named_theorems>\<open>independence\<close>)
   ORELSE' independence_split_tac ctxt)
 
-fun independence_tac ctxt = REPEAT_ALL_NEW (independence_tac_step ctxt)
+fun independence_tac ctxt i = 
+  (* REPEAT_ALL_NEW (independence_tac_step ctxt) *)
+  (independence_tac_step ctxt 
+    THEN_ALL_NEW independence_tac ctxt) i
 
 fun split_invariant_implications _ impl = let
   fun split1 impl = Forward_Hoare.filter_OF 

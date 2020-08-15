@@ -6,9 +6,26 @@ fun tracing' msg = if Thread_Data.get silent = NONE
                    then tracing (msg()) else ()
 fun with_silence f x = Thread_Data.setmp silent (SOME()) f x
 
+fun all_to_var maxidx (Const("Pure.all", _) $ Abs (a, T, t)) = 
+        subst_bound (Var(("x",Int.max(maxidx, maxidx_of_term t) + 1),T), t)
+  | all_to_var _ t = raise TERM("all_to_var", [t])
+
+fun strip_assums_concl_var maxidx (Const("Pure.imp", _) $ H $ B) = strip_assums_concl_var maxidx B
+  | strip_assums_concl_var maxidx (t as Const("Pure.all", _) $ Abs _) =
+        strip_assums_concl_var maxidx (all_to_var maxidx t)
+  | strip_assums_concl_var _ B = B;
+
+(* Quick but keeps Bound's in term *)
 fun bool_of_prop t = 
   if fastype_of t = propT then HOLogic.dest_Trueprop (Logic.strip_assums_concl t)
   else t
+
+(* Replaces Bound's by vars *)
+fun bool_of_prop' maxidx t = 
+  if fastype_of t = propT then HOLogic.dest_Trueprop (strip_assums_concl_var maxidx t)
+  else t
+
+
 
 fun string_of_fact_ref (r as Facts.Named _) = Facts.string_of_ref r
   | string_of_fact_ref (Facts.Fact str) = enclose "\<open>" "\<close>" str
@@ -475,7 +492,7 @@ fun current_invariant_tac lenient OFs thms ctxt = SUBGOAL (fn (t,i) => let
               | NONE => let
                   val t = bool_of_prop t handle TERM(msg,Ts) => raise TERM("current_invariant_tac: "^msg,Ts)
                   in get_invariant_from_implication ctxt t end
-  val logic = #logic inv |> get_the_logic' ctxt             
+  val logic = #logic inv |> get_the_logic' ctxt
   val inv_def = #def_thm inv
   val inv_markup_name = #binding inv |> string_of_binding_invariant
   val thms_inst = filter_OF thms [inv_def]

@@ -129,10 +129,6 @@ lemma True proof
     apply wp
     using start2_inv_def by auto
 
-(* TODO: why does this make preservation diverge? *)
-  note xxx = mk_invariant_consequence2[OF step1L_inv_def]
-  (* note xxx[hoare_invi] *)
-
   hoare' step1LR: range \<emptyset> ~ 1 pre step1L post step1LR = default
     (* TODO: should be automatic *)
     by auto
