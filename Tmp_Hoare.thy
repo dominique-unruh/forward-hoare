@@ -780,7 +780,7 @@ lemma wp_Set2[hoare_wp add]:
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
   using imp unfolding assms(1) postcondition_default2_def by auto
 
-
+(* TODO: Also make a generic wp for single programs *)
 lemma wp_generic[hoare_wp add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 (p1,p2) A"
@@ -789,6 +789,13 @@ lemma wp_generic[hoare_wp add]:
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
   using assms(2,3) unfolding assms(1) postcondition_default2_def 
   apply auto by metis
+
+lemma wp_rnd[hoare_wp add]:
+  assumes "invariant \<equiv> postcondition_rnd \<mu> x y A"
+  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> (\<forall>(a,b)\<in>set_spmf (\<mu> m1 m2). B (update_var x a m1) (update_var y b m2))"
+  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
+  using assms unfolding postcondition_rnd_def
+  apply auto by blast
 
 (* TODO same for Sample *)
 lemma wp_Set_cons1:
