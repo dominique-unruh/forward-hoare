@@ -30,6 +30,10 @@ proof -
     by auto
 qed
 
+lemma less_eq_card_spmf[simp]: "less_eq_card (UNIV::'val set) (UNIV::'val spmf set)"
+  unfolding less_eq_card_def apply (rule exI[of _ return_spmf])
+  by (simp add: inj_on_def)
+
 type_synonym ('mem,'var) expression = \<open>'mem \<Rightarrow> 'var\<close>
 type_synonym 'mem untyped_expression = \<open>('mem,'mem) expression\<close>
 type_synonym 'mem untyped_spmf_expression = \<open>('mem,'mem spmf) expression\<close>
@@ -190,8 +194,8 @@ proof (cases \<open>valid_var (f, UNIV)\<close>)
 next
   case True
   define i where "i = (some_embedding::'val\<Rightarrow>'mem)"
-  have "less_eq_card (UNIV::'val set) (UNIV::'var spmf set)"
-    sorry
+  have "less_eq_card (UNIV::'val set) (UNIV::'val spmf set)"
+    by simp
   also from True have "less_eq_card (UNIV::'val spmf set) (UNIV::'mem set)"
     by (rule valid_var_less_eq_card)
   finally have "inj i"
@@ -816,19 +820,45 @@ lemma wp_skip12:
   unfolding postcondition_default2_def
   by auto
 
+lemma independent_of_prog_append:
+  assumes "independent_of_prog A P"
+  assumes "independent_of_prog A Q"
+  shows "independent_of_prog A (P@Q)"
+  using assms
+  by (auto simp add: o_def independent_of_prog_def semantics_seq)
+
+lemma independent_of_prog_Set:
+  assumes "independent_of A x"
+  shows "independent_of_prog A [Set x e]"
+  using assms unfolding independent_of_prog_def independent_of_def
+  by simp
+
+
 lemma independent_of_prog_Set_cons:
   assumes "independent_of A x"
+  assumes "independent_of_prog A P"
   shows "independent_of_prog A (Set x e # P)"
-  sorry
+  apply (rule independent_of_prog_append[where P="[_]", simplified])
+   apply (rule independent_of_prog_Set)
+  using assms by -
+
+lemma independent_of_prog_Sample:
+  assumes "independent_of A x"
+  shows "independent_of_prog A [Sample x e]"
+  using assms unfolding independent_of_prog_def independent_of_def
+  by simp
 
 lemma independent_of_prog_Sample_cons:
   assumes "independent_of A x"
+  assumes "independent_of_prog A P"
   shows "independent_of_prog A (Sample x e # P)"
-  sorry
+  apply (rule independent_of_prog_append[where P="[_]", simplified])
+   apply (rule independent_of_prog_Sample)
+  using assms by -
 
 lemma independent_of_prog_empty:
   shows "independent_of_prog A []"
-  sorry
+  unfolding independent_of_prog_def by simp
 
 lemma untouched[hoare_untouched add]: 
   fixes x :: "('mem,'val) var"
@@ -855,15 +885,31 @@ lemma untouchedLR[hoare_untouched add]:
 
 lemma untouched_rnd[hoare_untouched add]: 
   fixes x :: "('mem,'val) var"
-  assumes "invariant \<equiv> postcondition_rnd \<mu> x y A"
+  assumes invariant_def: "invariant \<equiv> postcondition_rnd \<mu> x y A"
   assumes imp: "\<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
   assumes indepL: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentL_of B x"
   assumes indepR: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentR_of B y"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
-  using imp indepL indepR
-  unfolding assms(1) postcondition_default2_def independent_of_prog_def
-  apply auto
-  sorry
+proof (rule+)
+  fix m1 m2 assume "invariant m1 m2"
+  then obtain m1' m2' where "A m1' m2'" 
+    and in_supp: "(m1, m2) \<in> (\<lambda>(v1, v2). (update_var x v1 m1', update_var y v2 m2')) 
+                                   ` set_spmf (\<mu> m1' m2')"
+    unfolding invariant_def postcondition_rnd_def apply atomize_elim by auto
+  from in_supp obtain v1 v2 where (* "(v1,v2) \<in> set_spmf (\<mu> m1' m2')" 
+    and *) v1: "m1 = update_var x v1 m1'" and v2: "m2 = update_var y v2 m2'"
+    by auto
+  from \<open>A m1' m2'\<close> have \<open>B m1' m2'\<close>
+    using imp by simp
+  then have \<open>B (update_var x v1 m1') m2'\<close>
+    using indepL by (auto simp: independent_of_def)
+  then have \<open>B m1 m2'\<close>
+    using v1 by simp
+  then have \<open>B m1 (update_var y v2 m2')\<close>
+    using indepR by (auto simp: independent_of_def)
+  then show \<open>B m1 m2\<close>
+    using v2 by simp
+qed
 
 (* TODO: do we even want to keep "updated" tactic? If yes, add rules for Sample *)
 lemma updated[hoare_updated add]:
