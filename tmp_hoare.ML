@@ -249,12 +249,11 @@ structure Logic1 = Hoare_Logic(
   fun invariant_typ options = 
     (#memory_type options |> the' (fn _ => "Memory type not set. Use \"Hoare config memory = <typ>\".")) --> dummyT
 
-  fun pretty_range _ (Range (_,range)) = Pretty.commas (range |> map (string_of_int #> Pretty.str)) |> Pretty.block
+  fun pretty_range1 [] = Pretty.str "\<emptyset>"
+    | pretty_range1 range = Pretty.commas (range |> map (string_of_int #> Pretty.str)) |> Pretty.block
+  fun pretty_range _ (Range (_,range)) = pretty_range1 range
     | pretty_range _ (Range2 (_,range1,_,range2)) = 
-        Pretty.block [
-          Pretty.commas (range1 |> map (string_of_int #> Pretty.str)) |> Pretty.block,
-          Pretty.str "~",
-          Pretty.commas (range2 |> map (string_of_int #> Pretty.str)) |> Pretty.block]
+        Pretty.block [pretty_range1 range1, Pretty.str " ~ ", pretty_range1 range2]
 
   fun check_program _ prog = (HOLogic.dest_list prog; ())
     handle TERM _ => error "Program must be a list of instructions"

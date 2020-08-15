@@ -132,7 +132,6 @@ lemma True proof
   hoare' step1LR: range \<emptyset> ~ 1 pre step1L post step1LR = default
     (* TODO: should be automatic *)
     by auto
-(* TODO: pretty_range should include the \<emptyset> *)
 
   have bla [hoare_invi]: "{step1LR \<Rightarrow> $x1=$x2}"
     apply wp
