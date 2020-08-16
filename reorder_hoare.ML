@@ -118,19 +118,6 @@ structure Logic = Hoare_Logic(
     Scan.lift (Parse.list1 Parse.nat)
       >> (fn indices => (get_current_program_name options, indices))
 
-(* (* TODO rename to check_range and have unit return type *)
-  fun valid_range prog range = let
-    val len = length (prog |> HOLogic.dest_list)
-    val _ = range |> List.app (fn i => if i <= 0 
-            then error ("Range contains invalid index " ^ string_of_int i ^ " <= 0")
-            else ()) 
-    val _ = range |> List.app (fn i => if i > len 
-            then error ("Range contains invalid index " ^ string_of_int i ^ " > " ^ string_of_int len ^ " (program length)")
-            else ()) 
-    val _ = if is_unique_sorted range then ()
-            else error ("Range is not sorted")
-  in true end *)
-
   fun check_invariant _ _ = ()
 
   fun hoare_thm _ pre prog post = \<^const>\<open>hoare\<close> $ pre $ prog $ post |> HOLogic.mk_Trueprop

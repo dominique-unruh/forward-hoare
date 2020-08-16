@@ -689,17 +689,12 @@ fun mark_atoms tm =
   in mark tm end;
 
 fun invariant_implication_tr ctxt [inv1_var,inv2] = let
-(* val _ = \<^print> inv1_var *)
     val inv1_name = case inv1_var of Free(n,_) => n | _ => error "_invariant_implication parse_translation 1"
     val inv1 = get_the_invariant (Context.Proof ctxt) inv1_name
     val logic = get_the_logic' ctxt (#logic inv1)
     val inv1_const = #const inv1 |> mark_atoms
     val inv2_tr = inv2 |> #invariant_parse_translation logic ctxt (#const inv1)
-(* Tmp_Hoare.tr_EXPR2_like HOLogic.boolT ctxt inv2 (* TODO also EXPR_like & not hardcoded *) *)
-(* val inv1_const = Free("step2_inv",fastype_of inv1_const) *)
     val impl = #invariant_implication_syntax logic ctxt inv1_const inv2_tr
-(* val _ = impl |> \<^print> *)
-(* val _ = impl_raw |> Syntax.string_of_term ctxt |> writeln *)
   in impl end
   | invariant_implication_tr _ ts = raise TERM("invariant_implication_tr", ts)
 
