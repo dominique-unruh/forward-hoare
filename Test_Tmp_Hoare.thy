@@ -2,6 +2,23 @@ theory Test_Tmp_Hoare
   imports Tmp_Hoare
 begin
 
+ML \<open>
+local
+val ctxt = \<^context>
+val context = Context.Proof ctxt
+val table = Name_Space.empty_table "bunny"
+val (name,table) = Name_Space.define context false (\<^binding>\<open>rabbit\<close>,123) table
+(* val _ = \<^print> name *)
+in
+val _ = Name_Space.check context table ("rabbit",\<^here>)
+val _ = Position.reports [(\<^here>, Markup.properties 
+     (Position.entity_properties_of false (serial()) \<^here>)
+     (Markup.entity "kitten" "meow"))]
+end
+\<close>
+
+
+
 record memory = mem_x :: int   mem_y :: "real"   mem_z :: nat
 
 definition "x_raw (m::memory) = (mem_x m, m\<lparr>mem_x := 0\<rparr>)"
@@ -120,32 +137,29 @@ lemma True proof
 
   thm \<open>{start2 \<Rightarrow> $x1=$x2+1}\<close>
   thm \<open>{start2 \<Rightarrow> $z1=$z2}\<close>
-
-  hoare' step1L: range 1 ~ \<emptyset> pre start2 post step1L = default
-    (* TODO: should be automatic *)
-    by auto
+  
+  hoare step1L: range 1 ~ \<emptyset> pre start2 post step1L = default
 
   have [hoare_invi]: "{step1L \<Rightarrow> $x1=$x2+2}"
     apply wp
     using start2_inv_def by auto
 
-  hoare' step1LR: range \<emptyset> ~ 1 pre step1L post step1LR = default
-    (* TODO: should be automatic *)
-    by auto
+  hoare step1LR: range \<emptyset> ~ 1 pre step1L post step1LR = default
 
   have bla [hoare_invi]: "{step1LR \<Rightarrow> $x1=$x2}"
     apply wp
     using \<open>{step1L \<Rightarrow> $x1=$x2+2}\<close> 
     by auto
 
-  hoare' step2: range 2~2 pre step1LR post step2 = default
-    (* TODO: should be automatic *)
-    by auto
+  hoare step2: range 2~2 pre step1LR post step2 = default
 
   have [hoare_invi]: "{step2 \<Rightarrow> $z1=$z2}"
     apply wp
     using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close>
     by simp
+
+  hoare' step3test: range 3~3 pre step2 post step3test = default
+    by auto
 
   hoare' step3: range 3~3 pre step2 post step3 = 
         rnd \<open>\<lambda>m1 m2. map_spmf (\<lambda>x. (x,x+1)) (spmf_of_set {1,2})\<close>

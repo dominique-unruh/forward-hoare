@@ -37,11 +37,20 @@ val dest_literal_syntax =
 
 
 syntax "_SOLVE_WITH" :: "id \<Rightarrow> prop \<Rightarrow> prop" ("\<lbrakk>SOLVER _\<rbrakk> _" 0)
-parse_translation \<open>[(\<^syntax_const>\<open>_SOLVE_WITH\<close>, fn ctxt => fn [Free(n,_), t] =>
-  Const(\<^const_name>\<open>SOLVE_WITH\<close>, dummyT) $ HOLogic.mk_literal n $ t)]\<close>
+syntax "_SOLVE_WITH_opt" :: "id \<Rightarrow> prop \<Rightarrow> prop" ("\<lbrakk>SOLVER _?\<rbrakk> _" 0)
+
+parse_translation \<open>[
+  (\<^syntax_const>\<open>_SOLVE_WITH\<close>, fn ctxt => fn [Free(n,_), t] =>
+    Const(\<^const_name>\<open>SOLVE_WITH\<close>, dummyT) $ HOLogic.mk_literal n $ t),
+  (\<^syntax_const>\<open>_SOLVE_WITH_opt\<close>, fn ctxt => fn [Free(n,_), t] =>
+    Const(\<^const_name>\<open>SOLVE_WITH\<close>, dummyT) $ HOLogic.mk_literal (n ^ "?") $ t)]\<close>
+
 print_translation \<open>[(\<^const_syntax>\<open>SOLVE_WITH\<close>, fn ctxt => fn [n,t] => let
-  val n' = dest_literal_syntax n handle TERM _ => raise Match
-  in Const(\<^syntax_const>\<open>_SOLVE_WITH\<close>,dummyT) $ Free(n',dummyT) $ t end)]\<close>
+    val n' = dest_literal_syntax n handle TERM _ => raise Match
+    val (n',const) = case String.sub (n',size n'-1) of
+                        #"?" => (String.substring (n',0,size n'-1),\<^syntax_const>\<open>_SOLVE_WITH_opt\<close>)
+                      | _ => (n',\<^syntax_const>\<open>_SOLVE_WITH\<close>)
+    in Const(const,dummyT) $ Free(n',dummyT) $ t end)]\<close>
 
 lemma remove_SOLVE_WITH: "PROP P \<Longrightarrow> PROP SOLVE_WITH s PROP P"
   unfolding SOLVE_WITH_def by auto

@@ -477,6 +477,10 @@ val _ = Theory.setup
 fun auto_subgoal_tac lenient (logic:logic) ctxt = SUBGOAL (fn (t,i) => case t of
   Const(\<^const_name>\<open>SOLVE_WITH\<close>,_) $ str $ _ => let
     val str = HOLogic.dest_literal str
+    val (str,typ) = case String.sub (str,size str-1) of
+                        #"?" => (String.substring (str,0,size str-1), #"?")
+                      | _ => (str ,#" ")
+    val lenient = case typ of #"?" => true | #" " => lenient | _ => raise Match
     val tac = case str of 
                 _ => case Symtab.lookup (#subgoal_tactics logic) str of
                        SOME tac => tac ctxt
@@ -615,7 +619,8 @@ fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (
   val state = new_hoare toolkit binding after_qed0 logic range precondition (Binding.name_of postcondition) st
   val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
     |> Seq.first_result "could not unfold definition of postcondition (internal error)"
-  val (state,_) = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (tac ctxt)), Position.no_range) state
+  fun tac' ctxt = tac ctxt THEN ALLGOALS (auto_subgoal_tac false logic ctxt)
+  val (state,_) = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (tac' ctxt)), Position.no_range) state
     |> Seq.first_result "could not solve proof obligation"
 
   in state end

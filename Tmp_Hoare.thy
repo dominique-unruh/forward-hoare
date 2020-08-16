@@ -516,8 +516,15 @@ qed
   using assms
   by (auto simp add: is_coupling_def rev_image_eqI) *)
 
+lemma weight_semantics_Nil: "weight_spmf (semantics [] m) = 1"
+  by simp
+
+lemma weight_semantics_Set_cons: "weight_spmf (semantics (Set x e # P) m) = 
+  weight_spmf (semantics P (update_var x (e m) m))"
+  by simp
+
 lemma postcondition_default2_valid:
-  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> weight_spmf (semantics (fst p) m1) = weight_spmf (semantics (snd p) m2)"
+  assumes "\<lbrakk>SOLVER same_weight_tac?\<rbrakk> (\<And>m1 m2. A m1 m2 \<Longrightarrow> weight_spmf (semantics (fst p) m1) = weight_spmf (semantics (snd p) m2))"
   shows "rhoare A (fst p) (snd p) (postcondition_default2 p A)"
 proof -
   obtain \<mu> 
@@ -525,7 +532,7 @@ proof -
       and \<mu>2: "map_spmf snd (\<mu> m1 m2) = semantics (snd p) m2" 
     if "A m1 m2" for m1 m2
     apply atomize_elim 
-    using coupling_exists[OF assms]
+    using coupling_exists[OF assms[unfolded SOLVE_WITH_def, rule_format]]
     by (auto simp: all_conj_distrib[symmetric] intro!: choice)
 
   have supp: "m1' \<in> set_spmf (semantics (fst p) m1)" 

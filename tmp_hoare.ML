@@ -164,6 +164,11 @@ fun tr_EXPR2_like T ctxt e =   let
     Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> dummyT --> T)
   end
 
+fun same_weight_tac ctxt = Raw_Simplifier.rewrite_goal_tac ctxt @{thms 
+      fst_conv[THEN eq_reflection] snd_conv[THEN eq_reflection]
+      weight_semantics_Nil[THEN eq_reflection]
+      weight_semantics_Set_cons[THEN eq_reflection]}
+      THEN' resolve_tac ctxt @{thms refl}
 
 fun wp_tac ctxt = (* print_subgoal_tac ctxt "wp_tac" THEN' *) resolve_tac ctxt @{thms wp_Set_cons1 wp_Set_cons2 wp_skip12}
 
@@ -432,7 +437,8 @@ structure Logic1 = Hoare_Logic(
     Forward_Hoare.filter_OF @{thms mk_invariant_consequence1 mk_invariant_consequence2} [thm]
     |> maps (split_invariant_implications ctxt)
 
-  val subgoal_tactics = [("wp_tac",wp_tac),("independence_tac",independence_tac)]
+  val subgoal_tactics = [("wp_tac",wp_tac),("independence_tac",independence_tac),
+    ("same_weight_tac", same_weight_tac)]
 
 )
 
