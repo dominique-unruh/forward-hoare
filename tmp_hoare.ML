@@ -131,21 +131,22 @@ fun sort_program _ ([],prog) = ([],prog,@{thm sort_program_empty_aux})
 
 fun make_syntax_type (Type(name, Ts)) = Term.list_comb 
   (Const("\<^type>"^name, dummyT), map make_syntax_type Ts)
+  | make_syntax_type T = raise TYPE("make_syntax_type: type variables not supported", [T], [])
 
-fun tr_EXPR_like T ctxt e =   let
+fun tr_EXPR_like T _ e =   let
   fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) =
         @{const eval_var(dummy,dummy)} $ Free(n, dummyT) $ Bound i
-    | replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
+    | replace _ (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
     | replace i (t1$t2) = replace i t1 $ replace i t2
     | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
-    | replace i t = t
+    | replace _ t = t
   val e' = replace 0 e
   val t = Abs("mem",dummyT,e')
   in
     Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> T)
   end
 
-fun tr_EXPR2_like T ctxt e =   let
+fun tr_EXPR2_like T _ e =   let
   fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) = let
         val len = String.size n
         val last = String.sub (n, len-1)
@@ -154,10 +155,10 @@ fun tr_EXPR2_like T ctxt e =   let
         val lr = case last of #"1" => 1 | #"2" => 0 |
                     _ => error ("Variable must be indexed. ($"^n^"1 or $"^n^"2 instead of $"^n^")")
       in @{const eval_var(dummy,dummy)} $ Free(name, dummyT) $ Bound (i+lr) end
-    | replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
+    | replace _ (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
     | replace i (t1$t2) = replace i t1 $ replace i t2
     | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
-    | replace i t = t
+    | replace _ t = t
   val e' = replace 0 e
   val t = Abs("mem1",dummyT,Abs("mem2",dummyT,e'))
   in
@@ -303,13 +304,13 @@ structure Logic1 = Hoare_Logic(
                  handle List.Empty => error "Left program must consist of a single statement"
     val prog2s = HOLogic.dest_list prog2 |> the_single
                  handle TERM _ => error "Right program must consist of a single statement"
-                 handle List.Empty => error "right program must consist of a single statement"
-    val (x1,e1) = case prog1s of (Const(\<^const_name>\<open>Sample\<close>, _) $ x1 $ e1) => (x1,e1)
+                 handle List.Empty => error "Right program must consist of a single statement"
+    val x1 = case prog1s of (Const(\<^const_name>\<open>Sample\<close>, _) $ x $ _) => x
               | _ => error "Left program must consist of a Sample statement"
-    val (x2,e2) = case prog1s of (Const(\<^const_name>\<open>Sample\<close>, _) $ x2 $ e2) => (x2,e2)
+    val x2 = case prog2s of (Const(\<^const_name>\<open>Sample\<close>, _) $ x $ _) => x
               | _ => error "Right program must consist of a Sample statement"
     val (mem1T,x1T) = fastype_of x1 |> dest_varT "postcondition_rnd_parse"
-    val (mem2T,x2T) = fastype_of x1 |> dest_varT "postcondition_rnd_parse"
+    val (mem2T,x2T) = fastype_of x2 |> dest_varT "postcondition_rnd_parse"
     fun tac ctxt = resolve_tac ctxt @{thms postcondition_rnd_valid} 1
               THEN resolve_tac ctxt @{thms refl} 1
     fun mk_postcondition coupling_str = let
