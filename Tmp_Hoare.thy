@@ -58,22 +58,10 @@ lemma dummy_untyped_var_valid: "valid_var dummy_untyped_var"
   apply (rule exI[of _ UNIV]) 
   apply (rule bij_betw_byWitness[of _ snd]) by auto
 
-(* TODO: do we use the spmf_var variants? *)
-definition "dummy_untyped_spmf_var = (\<lambda>x::'mem. (return_spmf undefined::'mem spmf,x), {return_spmf undefined::'mem spmf})"
-lemma dummy_untyped_spmf_var_valid: "valid_var dummy_untyped_spmf_var"
-  unfolding valid_var_def dummy_untyped_spmf_var_def apply auto
-  apply (rule exI[of _ UNIV]) 
-  apply (rule bij_betw_byWitness[of _ snd]) by auto
-
 typedef 'mem untyped_var = 
   "Collect valid_var :: (('mem\<Rightarrow>'mem\<times>'mem)\<times>'mem set) set"
   by (rule exI[of _ dummy_untyped_var], simp add: dummy_untyped_var_valid)
 setup_lifting type_definition_untyped_var
-
-typedef 'mem untyped_spmf_var =
-  "Collect valid_var :: (('mem\<Rightarrow>'mem spmf\<times>'mem)\<times>'mem spmf set) set"
-  by (rule exI[of _ dummy_untyped_spmf_var], simp add: dummy_untyped_spmf_var_valid)
-setup_lifting type_definition_untyped_spmf_var
 
 lemma 
   shows some_embedding_inj: "less_eq_card (UNIV::'a set) (UNIV::'b set) \<Longrightarrow> inj (some_embedding::'a\<Rightarrow>'b)" 
@@ -146,12 +134,6 @@ definition "mk_var_untyped_raw (f::'mem\<Rightarrow>'val \<times> 'mem) =
        range (some_embedding::'val\<Rightarrow>'mem))
       else dummy_untyped_var)"
 
-definition "mk_spmf_var_untyped_raw (f::'mem\<Rightarrow>'val spmf \<times> 'mem) =
-      (if valid_var (f, UNIV) then
-      (map_prod (map_spmf (some_embedding::'val\<Rightarrow>'mem)) id \<circ> f,
-       range (map_spmf (some_embedding::'val\<Rightarrow>'mem)))
-      else dummy_untyped_spmf_var)"
-
 lemma mk_var_untyped_raw_valid: 
   fixes f :: "'mem \<Rightarrow> 'val \<times> 'mem"
   shows "valid_var (mk_var_untyped_raw f)"
@@ -180,39 +162,6 @@ next
     unfolding valid_var_def by auto
   with True show ?thesis
     by (simp add: i_def mk_var_untyped_raw_def)
-qed
-
-
-lemma mk_spmf_var_untyped_raw_valid: 
-  fixes f :: "'mem \<Rightarrow> 'val spmf \<times> 'mem"
-  shows "valid_var (mk_spmf_var_untyped_raw f)"
-proof (cases \<open>valid_var (f, UNIV)\<close>)
-  case False
-  then show ?thesis
-    unfolding mk_spmf_var_untyped_raw_def
-    using dummy_untyped_spmf_var_valid by auto
-next
-  case True
-  define i where "i = (some_embedding::'val\<Rightarrow>'mem)"
-  have "less_eq_card (UNIV::'val set) (UNIV::'val spmf set)"
-    by simp
-  also from True have "less_eq_card (UNIV::'val spmf set) (UNIV::'mem set)"
-    by (rule valid_var_less_eq_card)
-  finally have "inj i"
-    unfolding i_def
-    by (rule some_embedding_inj)
-  from True obtain R where bij_f: "bij_betw f UNIV (UNIV \<times> R)"
-    unfolding valid_var_def by auto
-  have bij_i: "bij_betw (map_prod (map_spmf i) id) (UNIV \<times> R) (range (map_spmf i) \<times> R)"
-    apply (rule bij_betw_map_prod)
-    using \<open>inj i\<close>
-    by (simp_all add: inj_on_imp_bij_betw option.inj_map pmf.inj_map)
-  from bij_f bij_i have "bij_betw (map_prod (map_spmf i) id \<circ> f) UNIV (range (map_spmf i) \<times> R)"
-    using bij_betw_trans by blast
-  then have \<open>valid_var (map_prod (map_spmf i) id \<circ> f, range (map_spmf i))\<close>
-    unfolding valid_var_def by auto
-  with True show ?thesis
-    by (simp add: i_def mk_spmf_var_untyped_raw_def)
 qed
 
 lift_definition mk_var_untyped :: "('mem,'val) var \<Rightarrow> 'mem untyped_var" is mk_var_untyped_raw
