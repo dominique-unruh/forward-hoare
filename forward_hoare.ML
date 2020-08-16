@@ -522,13 +522,17 @@ fun current_invariant_tac lenient OFs thms ctxt = SUBGOAL (fn (t,i) => let
 (* The SUBGOAL is to avoid that error_tac already throws an error when run on the dummy fact _ *)
 fun error_tac msg = SUBGOAL (fn _ => error (msg ())) 1
 
-fun invariant_untouched_tac ctxt lenient previous = current_invariant_tac lenient [previous] (fn _ => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_untouched\<close>) ctxt
+fun invariant_untouched_tac ctxt lenient previous = current_invariant_tac lenient [previous] 
+  (fn _ => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_untouched\<close>) ctxt
 fun invariant_untouched_method lenient ctxt = METHOD (
       fn [fact] => invariant_untouched_tac ctxt lenient fact 1
        | facts => error_tac (fn _ => "untouched method expects exactly one fact (the previous invariant implication), not " ^ string_of_int (length facts)))
 
-val invariant_updated_tac = current_invariant_tac false [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>)
-val invariant_wp_tac = current_invariant_tac false [] (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_wp\<close>)
+fun invariant_updated_tac ctxt lenient = current_invariant_tac lenient []
+  (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>) ctxt
+
+fun invariant_wp_tac ctxt lenient = current_invariant_tac lenient [] 
+  (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_wp\<close>) ctxt
 
 
 val _ = Theory.setup
