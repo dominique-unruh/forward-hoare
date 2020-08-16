@@ -172,13 +172,6 @@ lemma untouched[hoare_untouched add]:
   apply auto
   by (metis fun_upd_def)
 
-lemma updated[hoare_updated add]:
-  assumes "invariant \<equiv> postcondition_default [Set x e] A"
-  assumes indep: "independent_of e x"
-  shows "\<forall>m. invariant m \<longrightarrow> m x = e m"
-  using assms unfolding assms postcondition_default_def independent_of_def by auto
-
-
 ML_file \<open>reorder_hoare.ML\<close>
 
 subsection \<open>Concrete syntax for programs\<close>

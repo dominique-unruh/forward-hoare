@@ -528,9 +528,6 @@ fun invariant_untouched_method lenient ctxt = METHOD (
       fn [fact] => invariant_untouched_tac ctxt lenient fact 1
        | facts => error_tac (fn _ => "untouched method expects exactly one fact (the previous invariant implication), not " ^ string_of_int (length facts)))
 
-fun invariant_updated_tac ctxt lenient = current_invariant_tac lenient []
-  (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_updated\<close>) ctxt
-
 fun invariant_wp_tac ctxt lenient = current_invariant_tac lenient [] 
   (fn ctxt => Named_Theorems.get ctxt \<^named_theorems>\<open>hoare_wp\<close>) ctxt
 

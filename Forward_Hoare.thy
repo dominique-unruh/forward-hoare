@@ -10,8 +10,6 @@ theory Forward_Hoare
 begin
 
 named_theorems hoare_untouched
-(* Is this one meaningful? Or is wp basically the same? *)
-named_theorems hoare_updated
 named_theorems hoare_wp
 
 definition SOLVE_WITH :: "String.literal \<Rightarrow> prop \<Rightarrow> prop" 
@@ -64,11 +62,6 @@ method_setup untouched =
   \<open>Scan.lift (Scan.optional (Parse.reserved "lax" >> K true) false)
     >> Forward_Hoare.invariant_untouched_method\<close> 
   "Invariant is preserved"
-
-method_setup updated =
-  \<open>Scan.lift (Scan.optional (Parse.reserved "lax" >> K true) false)
-    >> (fn lenient => fn ctxt => SIMPLE_METHOD' (Forward_Hoare.invariant_updated_tac ctxt lenient))\<close> 
-  "Variable is updated"
 
 method_setup wp =
   \<open>Scan.lift (Scan.optional (Parse.reserved "lax" >> K true) false)

@@ -221,18 +221,6 @@ lemma filter_literal_neq:
   shows "String.Literal b0 b1 b2 b3 b4 b5 b6 cs \<noteq> String.Literal b0' b1' b2' b3' b4' b5' b6' cs'"
   using assms by -
 
-lemma newvalue_Set[hoare_updated add]:
-  assumes "invariant \<equiv> postcondition_trivial (Set x i) A"
-  shows "pc_imp invariant (\<lambda>m. m x = i)"
-  unfolding assms
-  by (rule pc_impI; simp)
-
-lemma newvalue_Guess[hoare_updated add]: 
-  assumes "invariant \<equiv> postcondition_pick (Guess x) i A"
-  shows "pc_imp invariant (\<lambda>m. m x = i)"
-  unfolding assms
-  by (rule pc_impI; simp)
-
 lemma unchanged_Guess_trivial[hoare_untouched add]: 
   assumes "invariant \<equiv> postcondition_trivial (Guess x) A"
   assumes imp: "pc_imp A B"
@@ -280,8 +268,7 @@ lemma wp_Add[hoare_wp add]:
   shows "pc_imp invariant B"
   unfolding assms(1)
   apply (rule pc_impI)
-  using distinct apply simp apply (drule imp)
-  by auto
+  using distinct imp by fastforce
 
 lemma wp_Set[hoare_wp add]:
   assumes "invariant \<equiv> postcondition_trivial (Set x i) A"
@@ -289,13 +276,24 @@ lemma wp_Set[hoare_wp add]:
   shows "pc_imp invariant B"
   unfolding assms(1)
   apply (rule pc_impI)
-  apply simp
-  using imp
-  apply auto
-  apply (drule imp)
-  by auto
+  using imp by fastforce
 
-(* lemmas wp = wp_Add wp_Set *)
+lemma wp_Guess[hoare_wp add]:
+  assumes "invariant \<equiv> postcondition_trivial (Guess x) A"
+  assumes imp: "\<And>m i. A m \<Longrightarrow> B (m(x:=i))"
+  shows "pc_imp invariant B"
+  unfolding assms(1)
+  apply (rule pc_impI)
+  using imp apply auto
+  by (metis fun_upd_triv fun_upd_upd)
+
+lemma wp_Guess_pick[hoare_wp add]:
+  assumes "invariant \<equiv> postcondition_pick (Guess x) i A"
+  assumes imp: "\<And>m. A m \<Longrightarrow> B (m(x:=i))"
+  shows "pc_imp invariant B"
+  unfolding assms(1)
+  apply (rule pc_impI)
+  using imp by force
 
 lemma append_aux1:
   assumes "xs = ys @ zs"

@@ -918,31 +918,6 @@ proof (rule+)
     using v2 by simp
 qed
 
-(* TODO: do we even want to keep "updated" tactic? If yes, add rules for Sample *)
-lemma updated[hoare_updated add]:
-  fixes x :: "('mem,'val) var"
-  assumes "invariant \<equiv> postcondition_default [Set x e] A"
-  assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
-  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of e x"
-  shows "\<forall>m. invariant m \<longrightarrow> eval_var x m = e m"
-  using assms unfolding assms postcondition_default_def independent_of_def by auto
-
-lemma updatedL[hoare_updated add]:
-  fixes x :: "('mem,'val) var"
-  assumes "invariant \<equiv> postcondition_default2 ([Set x e], p) A"
-  assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
-  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of e x"
-  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m1 = e m1"
-  using assms unfolding assms postcondition_default2_def independent_of_def by auto
-
-lemma updatedR[hoare_updated add]:
-  fixes x :: "('mem,'val) var"
-  assumes "invariant \<equiv> postcondition_default2 (p, [Set x e]) A"
-  assumes [simp]: "has_variables TYPE('mem) TYPE('val)"
-  assumes indep: "\<lbrakk>SOLVER independence_tac\<rbrakk> independent_of e x"
-  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> eval_var x m2 = e m2"
-  using assms unfolding assms postcondition_default2_def independent_of_def by auto
-
 lemma mk_invariant_consequence1:
   assumes "A \<equiv> B"
   shows "\<forall>m. A m \<longrightarrow> B m"

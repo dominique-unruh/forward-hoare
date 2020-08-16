@@ -22,7 +22,7 @@ proof  -
   hoare step1: range 0-1 pre start post step1 = trivial
 
   have step1_x5: "{step1 \<Rightarrow> \<lambda>m. m STR ''x'' = 5}"
-    by updated
+    by (wp, simp)
 
   (* Step 2: Guess y *)
 
@@ -33,7 +33,7 @@ proof  -
     by untouched
 
   have step2_y5: "{step2 \<Rightarrow> \<lambda>m. m STR ''y'' = -5}"
-    by updated
+    apply wp by auto
 
   (* Step 3: Add x y *)
 

@@ -11,7 +11,7 @@ hoare invariant (reorder_hoare) start: "\<lambda>m. True"
 hoare step1: range 1 pre start post step1 = default
 
 have step1x: "{step1 \<Rightarrow> \<lambda>m. m STR ''x'' = 1}"
-  apply updated by auto
+  apply wp by auto
 
 hoare step13: extends step1 range 3 post step13=default
 
@@ -20,7 +20,7 @@ have step13x: "{step13 \<Rightarrow> \<lambda>m. m STR ''x'' = 1}"
   by untouched
 
 have step13z: "{step13 \<Rightarrow> \<lambda>m. m STR ''z'' = 1}"
-  apply updated by auto
+  apply wp by auto
 
 hoare step132: extends step13 range 2 post step132=default
 
@@ -33,7 +33,7 @@ have step132z: "{step132 \<Rightarrow> \<lambda>m. m STR ''z'' = 1}"
   by untouched
 
 have step132y: "{step132 \<Rightarrow> \<lambda>m. m STR ''y'' = 1}"
-  apply updated by auto
+  apply wp by auto
 
 qed
 
