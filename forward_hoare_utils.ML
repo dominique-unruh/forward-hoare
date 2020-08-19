@@ -38,11 +38,12 @@ fun set_option "@last_program" name _ _ = set_last_program name
 
 fun get_current_program_name ({last_program}:options) = last_program |> the' (fn _ => "No current program defined")
 
+(* name is an internal (fully qualified) program name *)
 fun get_my_program ctxt name = let
   val context = Context.Proof ctxt
-  val prog : program = get_the_program context name
+  val prog : program = get_the_program_internal context name
   val _ = if #logic prog = name_of_logic (this_logic()) then ()
-          else error (string_of_binding_program (#binding prog) ^ " is from logic " ^ #logic prog ^ " but needed a program from logic " ^ name_of_logic (this_logic()))
+          else error (program_name_extern ctxt name ^ " is from logic " ^ #logic prog ^ " but needed a program from logic " ^ name_of_logic (this_logic()))
   in #code prog end
 
 (* Default implementation *)

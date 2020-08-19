@@ -9,6 +9,8 @@ struct
 
    Use invariant syntax translation when declaring invariants
 
+   Name space support for invariants, logics, hoare judgments
+
  *)
 
 open Forward_Hoare
@@ -239,10 +241,11 @@ structure Logic1 = Hoare_Logic(
         val T = Syntax.read_typ ctxt typ_str
         val T = Morphism.typ m T
         in set_memory_type T end
-    | set_option "left" name ctxt _ = let val name' = YXML.content_of name in
-        get_my_program ctxt name'; set_left_program name' end
-    | set_option "right" name ctxt _ = let val name' = YXML.content_of name in
-        get_my_program ctxt name'; set_right_program name' end
+(* TODO: check in left/right whether this is one of "our" programs *)
+    | set_option "left" name ctxt _ = 
+        set_left_program (read_program_name (Context.Proof ctxt) name |> fst)
+    | set_option "right" name ctxt _ = 
+        set_right_program (read_program_name (Context.Proof ctxt) name |> fst)
     | set_option name content ctxt m = map_util_options (Utils.set_option name content ctxt m)
 
   fun the_left_program options = options |> #left_program |> the' (fn _ => "No left program configured. Use 'hoare (tmp_logic) config left = name'")

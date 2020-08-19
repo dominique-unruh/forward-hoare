@@ -2,23 +2,6 @@ theory Test_Tmp_Hoare
   imports Tmp_Hoare
 begin
 
-ML \<open>
-local
-val ctxt = \<^context>
-val context = Context.Proof ctxt
-val table = Name_Space.empty_table "bunny"
-val (name,table) = Name_Space.define context false (\<^binding>\<open>rabbit\<close>,123) table
-(* val _ = \<^print> name *)
-in
-val _ = Name_Space.check context table ("rabbit",\<^here>)
-val _ = Position.reports [(\<^here>, Markup.properties 
-     (Position.entity_properties_of false (serial()) \<^here>)
-     (Markup.entity "kitten" "meow"))]
-end
-\<close>
-
-
-
 record memory = mem_x :: int   mem_y :: "real"   mem_z :: nat
 
 definition "x_raw (m::memory) = (mem_x m, m\<lparr>mem_x := 0\<rparr>)"

@@ -8,11 +8,11 @@ fun tracing' msg = if Thread_Data.get silent = NONE
                    then tracing (msg()) else ()
 fun with_silence f x = Thread_Data.setmp silent (SOME()) f x
 
-fun all_to_var maxidx (Const("Pure.all", _) $ Abs (a, T, t)) = 
+fun all_to_var maxidx (Const("Pure.all", _) $ Abs (_, T, t)) = 
         subst_bound (Var(("x",Int.max(maxidx, maxidx_of_term t) + 1),T), t)
   | all_to_var _ t = raise TERM("all_to_var", [t])
 
-fun strip_assums_concl_var maxidx (Const("Pure.imp", _) $ H $ B) = strip_assums_concl_var maxidx B
+fun strip_assums_concl_var maxidx (Const("Pure.imp", _) $ _ $ B) = strip_assums_concl_var maxidx B
   | strip_assums_concl_var maxidx (t as Const("Pure.all", _) $ Abs _) =
         strip_assums_concl_var maxidx (all_to_var maxidx t)
   | strip_assums_concl_var _ B = B;
@@ -146,13 +146,13 @@ fun get_the_postcondition_generator logic make_post =
  |> the' (fn _ => "Unknown postcondition generator " ^ make_post ^ " in logic " ^ name_of_logic logic)
 
 type var = string
-type program = { serial: serial, binding: binding, code: term, logic: string }
+type program = { serial: serial, code: term, logic: string }
 
-fun program_morphism m ({serial,binding,code,logic}:program) : program = let
-  in {serial=serial, binding=binding, logic=logic,
+fun program_morphism m ({serial,code,logic}:program) : program = let
+  in {serial=serial, logic=logic,
       code = Morphism.term m code} end
 
-fun program_eq (p1,p2) = #serial p1 = #serial p2
+fun program_eq (p1:program,p2:program) = #serial p1 = #serial p2
 
 type invariant = {
   serial: serial,
@@ -191,20 +191,26 @@ fun hoare_eq (h1,h2) = #serial h1 = #serial h2
 structure Hoare_Data = Generic_Data (
   type T = { invariants: invariant Symtab.table,
              hoares: hoare Symtab.table,
-             programs: program Symtab.table,
+             programs: program Name_Space.table,
              current_logic: logic option,
              options: ex_options Symtab.table
   }
   val empty = { invariants=Symtab.empty, hoares=Symtab.empty,
-    programs=Symtab.empty, current_logic=NONE, options=Symtab.empty }
+    programs=Name_Space.empty_table "program", current_logic=NONE, options=Symtab.empty }
   fun merge (d1,d2) =
     { invariants = Symtab.merge invariant_eq (#invariants d1, #invariants d2),
       hoares = Symtab.merge hoare_eq (#hoares d1, #hoares d2),
-      programs = Symtab.merge program_eq (#programs d1, #programs d2),
+      programs = Name_Space.merge_tables (#programs d1, #programs d2),
       current_logic = NONE, options = Symtab.empty }
   fun extend {invariants,hoares,programs,current_logic=_,options} =
     {invariants=invariants, hoares=hoares, programs=programs, current_logic=NONE, options=options}
 )
+
+fun map_result map f st = let
+  val result_ref = Unsynchronized.ref NONE
+  fun f' x = let val (result,y) = f x in (result_ref := SOME result; y) end
+  val st = map f' st
+  in (the' (fn _ => "map_result: result not assigned") (!result_ref),st) end
 
 fun map_invariants f = Hoare_Data.map (fn {invariants,hoares,programs,current_logic,options} => 
   {invariants=f invariants, hoares=hoares, programs=programs, current_logic=current_logic, options=options})
@@ -225,12 +231,20 @@ fun get_the_invariant context name = get_invariant context name |> the' (fn _ =>
 fun get_hoare context name = Symtab.lookup (Hoare_Data.get context |> #hoares) name
 fun get_the_hoare context name = get_hoare context name |> the' (fn _ => "Unknown Hoare judgment " ^ name)
 (* TODO check whether 'name' contains markup, if so, raise error. Same in all other getters *)
-fun get_program context name = Symtab.lookup (Hoare_Data.get context |> #programs) name
-fun get_the_program context name = get_program context name |> the' (fn _ => "Unknown program " ^ name)
+fun get_program_internal context name = Name_Space.lookup (Hoare_Data.get context |> #programs) name
+fun get_the_program_internal context name = get_program_internal context name |> the' (fn _ => "Unknown program " ^ name)
 fun get_current_logic context = Hoare_Data.get context |> #current_logic
 fun get_the_current_logic context = get_current_logic context |> the' (fn _ => "No current logic")
 fun map_known_implications f ({known_implications,binding,const,def_thm,logic,serial,term} : invariant) : invariant =
   {known_implications = f known_implications,binding=binding,const=const,def_thm=def_thm,logic=logic,serial=serial,term=term}
+
+fun program_name_extern ctxt name = 
+  Name_Space.extern ctxt (ctxt |> Context.Proof |> Hoare_Data.get |> #programs |> Name_Space.space_of_table) name
+fun read_program_name context name : string * program = 
+  let val source : Input.source = Syntax.read_input name 
+      val pos = Input.pos_of source
+      val name' = Input.text_of source
+  in Name_Space.check context (context |> Hoare_Data.get |> #programs) (name',pos) end
 
 structure Hoare_Proof_Data = Proof_Data (
   (* current_invariant is local to a proof obligation created by a hoare' command *)
@@ -390,10 +404,10 @@ val _ = print_with_markup content
   val _ = #check_program logic' ctxt program
   val st = set_current_logic_command toolkit logic' st
   val (_,_,st) = #define toolkit binding (Binding.suffix_name "_def" binding) program st
-  val name = Binding.name_of binding
-  val prog = {serial=serial(), binding=binding, logic=logic, code=program}
+  (* val name = Binding.name_of binding *)
   fun add_program0decl (m:morphism) context = let
-    val context = map_programs (Symtab.update_new (name, program_morphism m prog)) context
+  val prog : program = {serial=serial(), logic=logic, code=program}
+    val (name,context) = map_result map_programs (Name_Space.define context false (binding, program_morphism m prog)) context
     val context = set_option logic' "@last_program" name m context
     in context end
   val st = #declaration toolkit add_program0decl st
@@ -705,9 +719,6 @@ fun invariant_implication_tr ctxt [inv1_var,inv2] = let
 (** Isar command **)
 
 val binding_parser = Parse.binding --| Args.$$$ ":"
-(* val invariant_parser = Parse.name --| (Args.$$$ "\<rightarrow>" || Args.$$$ "->")
-fun invariant_has_parser toolkit = binding_parser -- invariant_parser -- Parse.term
->> (fn ((binding,invariant),term) => invariant_has_command toolkit binding invariant term) *)
 
 val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
 fun declare_program_parser toolkit = (logic_parser -- binding_parser -- Parse.term)
