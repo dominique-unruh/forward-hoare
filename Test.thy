@@ -8,7 +8,6 @@ ML \<open>
 open Forward_Hoare
 \<close>
 
-(* TODO: syntax highlighting does not work in program-term *)
 Hoare program (demo_logic) prog: \<open>PROG[x := 5; y <- ?; x += y]\<close>
 
 lemma "hoare (\<lambda>m. True) prog (\<lambda>m. m STR ''x'' = 0)"

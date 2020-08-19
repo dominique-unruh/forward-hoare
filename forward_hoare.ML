@@ -1,6 +1,8 @@
 structure Forward_Hoare =
 struct
 
+fun print_with_markup str = (YXML.parse_body str |> \<^print>; str)
+
 val silent = Thread_Data.var () : unit Thread_Data.var
 fun tracing' msg = if Thread_Data.get silent = NONE
                    then tracing (msg()) else ()
@@ -378,6 +380,7 @@ fun set_current_logic_command (toolkit:'a toolkit) (logic:logic) st = let
   in #declaration toolkit (K (set_current_logic logic)) st end
 
 fun define_program_command (toolkit:'a toolkit) (logic:string) binding content (st:'a) : 'a = let
+val _ = print_with_markup content
   val context = #context toolkit st
   val ctxt = Context.proof_of context
   val thy = Context.theory_of context
@@ -388,13 +391,12 @@ fun define_program_command (toolkit:'a toolkit) (logic:string) binding content (
   val st = set_current_logic_command toolkit logic' st
   val (_,_,st) = #define toolkit binding (Binding.suffix_name "_def" binding) program st
   val name = Binding.name_of binding
-(* TODO: instead of argument p, use variable prog *)
-  fun add_program0decl (p:program) (m:morphism) context = let
-    val context = map_programs (Symtab.update_new (name, program_morphism m p)) context
+  val prog = {serial=serial(), binding=binding, logic=logic, code=program}
+  fun add_program0decl (m:morphism) context = let
+    val context = map_programs (Symtab.update_new (name, program_morphism m prog)) context
     val context = set_option logic' "@last_program" name m context
     in context end
-  val st = #declaration toolkit (add_program0decl
-      {serial=serial(), binding=binding, logic=logic, code=program}) st
+  val st = #declaration toolkit add_program0decl st
 in st end
 
 fun set_option_command (toolkit:'a toolkit) (logic:string) name content (st:'a) : 'a = let
@@ -708,9 +710,7 @@ fun invariant_has_parser toolkit = binding_parser -- invariant_parser -- Parse.t
 >> (fn ((binding,invariant),term) => invariant_has_command toolkit binding invariant term) *)
 
 val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
-(* val name_parser = Parse.binding --| Parse.$$$ ":" *)
-val content_parser = Parse.embedded
-fun declare_program_parser toolkit = (logic_parser -- binding_parser -- content_parser)
+fun declare_program_parser toolkit = (logic_parser -- binding_parser -- Parse.term)
   >> (fn ((logic,name),content) => define_program_command toolkit logic name content)
 
 val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
