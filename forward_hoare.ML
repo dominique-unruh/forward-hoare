@@ -283,7 +283,7 @@ val dummy_invariant = {name="", logic=dummy_logic, term=\<^term>\<open>A\<close>
 type hoare = {
   serial: serial,
   logic: logic,
-  binding: binding,
+  (* binding: binding, *)
   range: ex_range,
   (* program: string, *)
   program_fragment_const: term,
@@ -292,28 +292,35 @@ type hoare = {
   valid: thm
 }
 
-fun hoare_morphism m ({serial,logic,binding,range,program_fragment_const,precondition,postcondition,valid}:hoare): hoare = 
-  {serial=serial, logic=logic, binding=binding, range=range, 
+structure HoareTable = Name_Table_Serial(
+  type T = hoare 
+  val get_id = #serial
+  fun merge _ = raise Same.SAME
+)
+
+
+fun hoare_morphism m ({serial,logic,range,program_fragment_const,precondition,postcondition,valid}:hoare): hoare = 
+  {serial=serial, logic=logic, range=range, 
    program_fragment_const = Morphism.term m program_fragment_const,
    precondition=precondition, postcondition=postcondition,
    valid = Morphism.thm m valid}
 
-fun hoare_eq (h1,h2) = #serial h1 = #serial h2
+(* fun hoare_eq (h1,h2) = #serial h1 = #serial h2 *)
 
 structure Hoare_Data = Generic_Data (
   type T = { invariants: InvTable.table,
 (* TODO: use a Name_Table_Serial for #hoares, too *)
-             hoares: hoare Symtab.table,
+             hoares: HoareTable.table,
 (* TODO: use a Name_Table_Serial for #programs, too *)
              programs: program Name_Space.table,
              current_logic: logic option,
              options: ex_options Symtab.table
   }
-  val empty = { invariants=InvTable.empty "invariant", hoares=Symtab.empty,
+  val empty = { invariants=InvTable.empty "invariant", hoares=HoareTable.empty "hoare",
     programs=Name_Space.empty_table "program", current_logic=NONE, options=Symtab.empty }
   fun merge (d1,d2) =
     { invariants = InvTable.merge (#invariants d1, #invariants d2),
-      hoares = Symtab.merge hoare_eq (#hoares d1, #hoares d2),
+      hoares = HoareTable.merge (#hoares d1, #hoares d2),
       programs = Name_Space.merge_tables (#programs d1, #programs d2),
       current_logic = NONE, options = Symtab.empty }
   fun extend {invariants,hoares,programs,current_logic=_,options} =
@@ -336,15 +343,16 @@ fun map_options f = Hoare_Data.map (fn {invariants,hoares,programs,current_logic
   {invariants=invariants, hoares=hoares, programs=programs, current_logic=current_logic, options=f options})
 fun set_current_logic (logic:logic) = Hoare_Data.map (fn {invariants,hoares,programs,current_logic=_,options} => 
   {invariants=invariants, hoares=hoares, programs=programs, current_logic=SOME logic, options=options})
-fun add_hoare0 i = map_hoares (Symtab.update_new (Binding.name_of (#binding i), i))
-fun add_hoare0decl i m = add_hoare0 (hoare_morphism m i)
+(* fun add_hoare0 i = map_hoares (Symtab.update_new (Binding.name_of (#binding i), i)) *)
+fun add_hoare0decl binding i m context = 
+  map_hoares (HoareTable.define context (Morphism.binding m binding, hoare_morphism m i)) context
 (* fun get_invariant context name = Symtab.lookup (Hoare_Data.get context |> #invariants) name *)
 (* fun get_invariants context = Hoare_Data.get context |> #invariants *)
 fun get_invariant_by_id context = 
   InvTable.get_by_id (Hoare_Data.get context |> #invariants)
 (* get_invariant context name |> the' (fn _ => "Unknown invariant " ^ name) *)
-fun get_hoare context name = Symtab.lookup (Hoare_Data.get context |> #hoares) name
-fun get_the_hoare context name = get_hoare context name |> the' (fn _ => "Unknown Hoare judgment " ^ name)
+fun get_hoare_by_id context id = HoareTable.get_by_id (Hoare_Data.get context |> #hoares) id
+(* fun get_the_hoare context name = get_hoare context name |> the' (fn _ => "Unknown Hoare judgment " ^ name) *)
 (* TODO check whether 'name' contains markup, if so, raise error. Same in all other getters *)
 fun get_program_internal context name = Name_Space.lookup (Hoare_Data.get context |> #programs) name
 fun get_the_program_internal context name = get_program_internal context name |> the' (fn _ => "Unknown program " ^ name)
@@ -370,6 +378,9 @@ fun pretty_invariant_name ctxt id : string =
 
 fun read_invariant_name context name : invariant = 
   InvTable.check context (context |> Hoare_Data.get |> #invariants) name |> #3
+
+fun read_hoare_name context name : hoare = 
+  HoareTable.check context (context |> Hoare_Data.get |> #hoares) name |> #3
 
 structure Hoare_Proof_Data = Proof_Data (
   (* current_invariant is local to a proof obligation created by a hoare' command *)
@@ -463,11 +474,11 @@ fun parse_src expect ctxt (parser:'a context_parser) (src:Token.src) : 'a = let
   val (result,_) = Scan.catch (parser --| eof) (Context.Proof ctxt, src @ [Token.eof])
   in result end
 
-fun join_hoare (toolkit:'a toolkit) binding (hoare1:string) (hoare2:string) (st:'a) = let
+fun join_hoare (toolkit:'a toolkit) binding (hoare1:serial) (hoare2:serial) (st:'a) = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
-  val hoare1' = get_the_hoare context hoare1
-  val hoare2' = get_the_hoare context hoare2
+  val hoare1' = get_hoare_by_id context hoare1
+  val hoare2' = get_hoare_by_id context hoare2
   (* val program = #program hoare1' *)
   (* val _ = if #program hoare1' <> #program hoare2' then error "mismatch" else () *)
   val _ = if #name (#logic hoare1') = #name (#logic hoare2') then () 
@@ -488,7 +499,7 @@ fun join_hoare (toolkit:'a toolkit) binding (hoare1:string) (hoare2:string) (st:
 
   val st = #note toolkit (Binding.suffix_name "_valid" binding) joined_thm st
 
-  val info : hoare = {serial=serial(), binding=binding, range=range,
+  val info : hoare = {serial=serial(), range=range,
     precondition= #precondition hoare1',
     postcondition= #postcondition hoare2',
     program_fragment_const=program_fragment_const,
@@ -497,7 +508,7 @@ fun join_hoare (toolkit:'a toolkit) binding (hoare1:string) (hoare2:string) (st:
     valid = joined_thm
   }
   
-  val st = #declaration toolkit (add_hoare0decl info) st
+  val st = #declaration toolkit (add_hoare0decl binding info) st
 
   in (st,info) end
 
@@ -743,7 +754,7 @@ fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (preco
       #define toolkit (bind "_prog") (bind "_prog_def") program_fragment st
   val valid_prop = #hoare_thm logic ctxt (#const precondition) program_fragment (#const postcondition)
   fun after_qed valid st = let
-      val info : hoare = {serial=serial(), binding=binding, range=range,
+      val info : hoare = {serial=serial(), range=range,
         precondition = #serial precondition,
         postcondition = #serial postcondition,
         program_fragment_const=program_fragment_const,
@@ -751,7 +762,7 @@ fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (preco
         (* program=program |> #binding |> Binding.name_of, *)
         valid=valid}
       val st = #note toolkit (Binding.suffix_name "_valid" binding) valid st
-      val st = #declaration toolkit (add_hoare0decl info) st
+      val st = #declaration toolkit (add_hoare0decl binding info) st
       val st = auto_preserve_invariant_implications toolkit
                 (#known_implications precondition) postcondition st
       in after_qed0 (st, info) end
@@ -781,15 +792,16 @@ fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (
   in state end
 
 
-fun extend_hoare_auto (toolkit:'a toolkit) binding (previous:string) after_qed0 range (postcondition:binding)
+fun extend_hoare_auto (toolkit:'a toolkit) binding (previous:serial) after_qed0 range (postcondition:binding)
     (make_post:string) (make_post_args:Token.src) (st:'a) = let
   val context = #context toolkit st
   val binding_step = Binding.suffix_name "_step" binding
-  val previous_hoare = get_the_hoare context previous
+  val previous_hoare = get_hoare_by_id context previous
   val logic = #logic previous_hoare
   val precondition = #postcondition previous_hoare
   fun after_qed (st, hoare) = let
-    val (st, joined_hoare) = join_hoare toolkit binding previous (Binding.name_of binding_step) st
+    val (st, joined_hoare) = 
+      join_hoare toolkit binding previous (#serial hoare) st
     in after_qed0 (st, hoare, joined_hoare) end
   val state = new_hoare_auto toolkit binding_step after_qed logic range precondition postcondition make_post make_post_args st
 in state end
@@ -808,7 +820,9 @@ fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (r
              | SOME pre => let 
                 val pre = read_invariant_name context pre |> #serial
                 in new_hoare_auto toolkit name fst logic range' pre post make_post make_post_args st end)
-    | SOME previous => extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st
+    | SOME previous => let
+        val previous = read_hoare_name context previous |> #serial
+        in extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st end
   in state end
 
 fun preserve_command (toolkit:'a toolkit) invs (in_inv:string) (state:'a) = let
