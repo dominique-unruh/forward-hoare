@@ -248,13 +248,13 @@ fun get_the_postcondition_generator context (logic:logic) make_post =
 
 
 type var = string
-type program = { name: string, code: term, logic: logic }
+type program = { serial: serial, code: term, logic: logic }
 
-val dummy_program : program = {name="", code=\<^term>\<open>A\<close>, logic=dummy_logic}
+(* val dummy_program : program = {name="", code=\<^term>\<open>A\<close>, logic=dummy_logic} *)
 
-(* fun program_morphism m ({code,logic,name}:program) : program = let
-  in {logic=logic, name=name,
-      code = Morphism.term m code} end *)
+fun program_morph m ({code,logic,serial}:program) : program = let
+  in {logic=logic, serial=serial,
+      code = Morphism.term m code} end
 
 (* fun program_eq (p1:program,p2:program) = #serial p1 = #serial p2 *)
 
@@ -275,8 +275,8 @@ structure InvTable = Name_Table_Serial(
   fun merge _ = (warning "Merging of invariants not implemented"; raise Same.SAME)
 )
 
-val dummy_invariant = {name="", logic=dummy_logic, term=\<^term>\<open>A\<close>, const=\<^term>\<open>A\<close>,
-  def_thm = @{thm Pure.reflexive}, known_implications=[]}
+(* val dummy_invariant = {name="", logic=dummy_logic, term=\<^term>\<open>A\<close>, const=\<^term>\<open>A\<close>,
+  def_thm = @{thm Pure.reflexive}, known_implications=[]} *)
 
 (* fun invariant_eq (i1,i2) = #serial i1 = #serial i2 *)
 
@@ -298,6 +298,12 @@ structure HoareTable = Name_Table_Serial(
   fun merge _ = raise Same.SAME
 )
 
+structure ProgTable = Name_Table_Serial(
+  type T = program 
+  val get_id = #serial
+  fun merge _ = raise Same.SAME
+)
+
 
 fun hoare_morphism m ({serial,logic,range,program_fragment_const,precondition,postcondition,valid}:hoare): hoare = 
   {serial=serial, logic=logic, range=range, 
@@ -309,19 +315,17 @@ fun hoare_morphism m ({serial,logic,range,program_fragment_const,precondition,po
 
 structure Hoare_Data = Generic_Data (
   type T = { invariants: InvTable.table,
-(* TODO: use a Name_Table_Serial for #hoares, too *)
              hoares: HoareTable.table,
-(* TODO: use a Name_Table_Serial for #programs, too *)
-             programs: program Name_Space.table,
+             programs: ProgTable.table,
              current_logic: logic option,
              options: ex_options Symtab.table
   }
   val empty = { invariants=InvTable.empty "invariant", hoares=HoareTable.empty "hoare",
-    programs=Name_Space.empty_table "program", current_logic=NONE, options=Symtab.empty }
+    programs=ProgTable.empty "program", current_logic=NONE, options=Symtab.empty }
   fun merge (d1,d2) =
     { invariants = InvTable.merge (#invariants d1, #invariants d2),
       hoares = HoareTable.merge (#hoares d1, #hoares d2),
-      programs = Name_Space.merge_tables (#programs d1, #programs d2),
+      programs = ProgTable.merge (#programs d1, #programs d2),
       current_logic = NONE, options = Symtab.empty }
   fun extend {invariants,hoares,programs,current_logic=_,options} =
     {invariants=invariants, hoares=hoares, programs=programs, current_logic=NONE, options=options}
@@ -354,23 +358,24 @@ fun get_invariant_by_id context =
 fun get_hoare_by_id context id = HoareTable.get_by_id (Hoare_Data.get context |> #hoares) id
 (* fun get_the_hoare context name = get_hoare context name |> the' (fn _ => "Unknown Hoare judgment " ^ name) *)
 (* TODO check whether 'name' contains markup, if so, raise error. Same in all other getters *)
-fun get_program_internal context name = Name_Space.lookup (Hoare_Data.get context |> #programs) name
-fun get_the_program_internal context name = get_program_internal context name |> the' (fn _ => "Unknown program " ^ name)
+(* fun get_program_internal context name = Name_Space.lookup (Hoare_Data.get context |> #programs) name *)
+fun get_program_by_id context id = ProgTable.get_by_id (Hoare_Data.get context |> #programs) id
+fun get_program_by_name context name = ProgTable.get_by_name (Hoare_Data.get context |> #programs) name
+fun get_program_name_by_id context id = ProgTable.get_name_by_id (Hoare_Data.get context |> #programs) id
+(* fun get_the_program_internal context name = get_program_internal context name |> the' (fn _ => "Unknown program " ^ name) *)
 fun get_current_logic context = Hoare_Data.get context |> #current_logic
 fun get_the_current_logic context = get_current_logic context |> the' (fn _ => "No current logic")
 fun map_known_implications f ({known_implications,serial,const,def_thm,logic,term} : invariant) : invariant =
   {known_implications = f known_implications,serial=serial,const=const,def_thm=def_thm,logic=logic,term=term}
 
-fun pretty_program_name ctxt name : string = 
-  Name_Space.pretty ctxt
-    (ctxt |> Context.Proof |> Hoare_Data.get |> #programs |> Name_Space.space_of_table) name
-    |> Pretty.string_of
+fun pretty_program_name ctxt id : string = 
+  ProgTable.pretty_name_from_id ctxt
+    (ctxt |> Context.Proof |> Hoare_Data.get |> #programs) id
 
 fun read_program_name context name : program = 
-  let val source : Input.source = Syntax.read_input name 
-      val pos = Input.pos_of source
-      val name' = Input.text_of source
-  in Name_Space.check context (context |> Hoare_Data.get |> #programs) (name',pos) |> snd end
+  ProgTable.check context (context |> Hoare_Data.get |> #programs) name |> #3
+fun read_program_name_as_name context name : string = 
+  ProgTable.check context (context |> Hoare_Data.get |> #programs) name |> #1
 
 fun pretty_invariant_name ctxt id : string = 
   InvTable.pretty_name_from_id ctxt
@@ -548,12 +553,13 @@ val _ = print_with_markup content
   val st = set_current_logic_command toolkit logic st
   val (_,_,st) = #define toolkit binding (Binding.suffix_name "_def" binding) program st
   (* val name = Binding.name_of binding *)
+  val prog = {serial = serial(), logic=logic, code=program}
   fun add_program0decl (m:morphism) context = let
     (* val prog : program = {logic=logic, code=program} *)
-    val (prog,context) = map_result map_programs (name_space_define_with_name context
-      dummy_program (Morphism.binding m binding) 
-      (fn name => {name=name, logic=logic, code=Morphism.term m program}))   context
-    val context = set_option logic "@last_program" (#name prog) m context
+    val context = map_programs (ProgTable.define context
+      (Morphism.binding m binding, program_morph m prog)) context 
+    val name = get_program_name_by_id context (#serial prog)
+    val context = set_option logic "@last_program" name m context
     in context end
   val st = #declaration toolkit add_program0decl st
 in st end

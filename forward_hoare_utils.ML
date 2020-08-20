@@ -42,9 +42,9 @@ fun get_current_program_name ({last_program}:options) = last_program |> the' (fn
 (* name is an internal (fully qualified) program name *)
 fun get_my_program ctxt name = let
   val context = Context.Proof ctxt
-  val prog : program = get_the_program_internal context name
+  val prog : program = get_program_by_name context name
   val _ = if #name (#logic prog) = #name (this_logic()) then ()
-          else error (pretty_program_name ctxt name ^ " is from logic " ^ pretty_logic_name ctxt (#name (#logic prog)) 
+          else error (pretty_program_name ctxt (#serial prog) ^ " is from logic " ^ pretty_logic_name ctxt (#name (#logic prog)) 
                 ^ " but needed a program from logic " ^ pretty_logic_name ctxt (#name (this_logic())))
   in #code prog end
 

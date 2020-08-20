@@ -243,9 +243,9 @@ structure Logic1 = Hoare_Logic(
         in set_memory_type T end
 (* TODO: check in left/right whether this is one of "our" programs *)
     | set_option "left" name ctxt _ = 
-        set_left_program (read_program_name (Context.Proof ctxt) name |> #name)
+        set_left_program (read_program_name_as_name (Context.Proof ctxt) name)
     | set_option "right" name ctxt _ = 
-        set_right_program (read_program_name (Context.Proof ctxt) name |> #name)
+        set_right_program (read_program_name_as_name (Context.Proof ctxt) name)
     | set_option name content ctxt m = map_util_options (Utils.set_option name content ctxt m)
 
   fun the_left_program options = options |> #left_program |> the' (fn _ => "No left program configured. Use 'hoare (tmp_logic) config left = name'")
