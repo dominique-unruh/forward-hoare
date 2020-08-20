@@ -1,5 +1,66 @@
+functor Name_Table_Serial(Config: sig 
+  type T
+  val get_id : T -> serial
+  (* Can raise Same.SAME or ERROR *)
+  val merge : T * T -> T
+end) : sig
+  type T = Config.T
+  type table
+  val empty : string -> table
+  val define : Context.generic -> (binding * Config.T) -> table -> table
+  val merge : table * table -> table
+  val get_id : Config.T -> serial
+  val get_by_id : table -> serial -> T
+  val get_by_name : table -> string -> T
+  val get_name_by_id : table -> serial -> string
+  val pretty_name : Proof.context -> table -> string -> string
+  val pretty_name_from_id : Proof.context -> table -> serial -> string
+  val check : Context.generic -> table -> string -> string * serial * T
+  val map_entry : serial -> (T -> T) -> table -> table
+  val get_first: (T -> 'a option) -> table -> 'a option
+end = struct
+type T = Config.T
+val get_id = Config.get_id
+type table = {name_table: serial Name_Space.table, entry_table: (T*string) Inttab.table}
+fun empty name : table = {name_table = Name_Space.empty_table name, 
+                                    entry_table = Inttab.empty}
+fun define context (binding,entry) ({name_table,entry_table}:table) : table = let
+  val id = get_id entry
+  val (name,name_table) = Name_Space.define context false (binding,id) name_table
+  val entry_table = Inttab.update_new (id,(entry,name)) entry_table
+  in {name_table=name_table,entry_table=entry_table} end
+fun merge_entry name_space id ((entry1,name1), (entry2,name2)) =
+     if name1 <> name2 then error ("When joining name space '"^ Name_Space.kind_of (Name_Space.space_of_table name_space) ^"': mismatch of names "^name1^" vs "^name2^" for same id")
+     else (Config.merge (entry1,entry2), name1)
+          handle ERROR msg => raise ERROR ("Cannot merge entry "^name1^" in table " ^ Name_Space.kind_of (Name_Space.space_of_table name_space))
+fun merge (table1:table, table2:table) : table =
+  {name_table = Name_Space.merge_tables (#name_table table1, #name_table table2),
+   entry_table = Inttab.join (merge_entry (#name_table table1)) (#entry_table table1, #entry_table table2)}
+fun kind_of table = Name_Space.kind_of (Name_Space.space_of_table (#name_table table))
+fun get_both_by_id (table:table) id : T * string = case Inttab.lookup (#entry_table table) id of
+  NONE => error ("No " ^ kind_of table ^ " with id " ^ string_of_int id ^ " found")
+  | SOME result => result
+fun get_by_id table id = get_both_by_id table id |> fst
+fun get_name_by_id table id = get_both_by_id table id |> snd
+fun get_by_name table name = get_by_id table (Name_Space.get (#name_table table) name)
+fun pretty_name ctxt table name = Name_Space.pretty ctxt (#name_table table |> Name_Space.space_of_table) name |> Pretty.string_of
+fun pretty_name_from_id ctxt table id = pretty_name ctxt table (get_name_by_id table id)
+fun check context table str = let
+  val source : Input.source = Syntax.read_input str
+  val pos = Input.pos_of source
+  val xname = Input.text_of source
+  val (name,id) = Name_Space.check context (#name_table table) (xname,pos)
+  val entry = get_by_id table id
+  in (name,id,entry) end
+fun map_entry id f {name_table, entry_table} =
+  {name_table=name_table, entry_table=Inttab.map_entry id (apfst f) entry_table}
+fun get_first (f:T->'a option) table : 'a option =
+  Inttab.get_first (fn (_,(x,_)) => f x) (#entry_table table)
+end
+
 structure Forward_Hoare =
 struct
+
 
 fun name_space_define_with_name context dummy binding value_fun table = let
   val (name,table) = Name_Space.define context false (binding,dummy) table
@@ -154,6 +215,7 @@ val dummy_logic : logic = let fun err _ = error "dummy_logic" in {
 (* fun name_of_logic ({binding,...}:logic) = Binding.name_of binding *)
 (* fun same_logic (l1:logic) (l2:logic) = (#serial l1 = #serial l2) *)
 
+(* TODO: use a Name_Table_Serial for logics, too *)
 structure Logic_Data = Theory_Data(
   type T = logic Name_Space.table
   val empty = Name_Space.empty_table "hoare logic"
@@ -190,25 +252,33 @@ type program = { name: string, code: term, logic: logic }
 
 val dummy_program : program = {name="", code=\<^term>\<open>A\<close>, logic=dummy_logic}
 
-fun program_morphism m ({code,logic,name}:program) : program = let
+(* fun program_morphism m ({code,logic,name}:program) : program = let
   in {logic=logic, name=name,
-      code = Morphism.term m code} end
+      code = Morphism.term m code} end *)
 
 (* fun program_eq (p1:program,p2:program) = #serial p1 = #serial p2 *)
 
 type invariant = {
   serial: serial,
+  (* name: string, *)
   logic: logic,
-  binding: binding,
+  (* binding: binding, *)
   term: term,
   const: term,
   def_thm: thm,
   known_implications: thm list
 }
 
-fun name_of_invariant ({binding,...}:invariant) = Binding.name_of binding
+structure InvTable = Name_Table_Serial(
+  type T = invariant 
+  val get_id = #serial
+  fun merge _ = (warning "Merging of invariants not implemented"; raise Same.SAME)
+)
 
-fun invariant_eq (i1,i2) = #serial i1 = #serial i2
+val dummy_invariant = {name="", logic=dummy_logic, term=\<^term>\<open>A\<close>, const=\<^term>\<open>A\<close>,
+  def_thm = @{thm Pure.reflexive}, known_implications=[]}
+
+(* fun invariant_eq (i1,i2) = #serial i1 = #serial i2 *)
 
 type hoare = {
   serial: serial,
@@ -217,8 +287,8 @@ type hoare = {
   range: ex_range,
   (* program: string, *)
   program_fragment_const: term,
-  precondition: string,
-  postcondition: string,
+  precondition: serial,
+  postcondition: serial,
   valid: thm
 }
 
@@ -231,16 +301,18 @@ fun hoare_morphism m ({serial,logic,binding,range,program_fragment_const,precond
 fun hoare_eq (h1,h2) = #serial h1 = #serial h2
 
 structure Hoare_Data = Generic_Data (
-  type T = { invariants: invariant Symtab.table,
+  type T = { invariants: InvTable.table,
+(* TODO: use a Name_Table_Serial for #hoares, too *)
              hoares: hoare Symtab.table,
+(* TODO: use a Name_Table_Serial for #programs, too *)
              programs: program Name_Space.table,
              current_logic: logic option,
              options: ex_options Symtab.table
   }
-  val empty = { invariants=Symtab.empty, hoares=Symtab.empty,
+  val empty = { invariants=InvTable.empty "invariant", hoares=Symtab.empty,
     programs=Name_Space.empty_table "program", current_logic=NONE, options=Symtab.empty }
   fun merge (d1,d2) =
-    { invariants = Symtab.merge invariant_eq (#invariants d1, #invariants d2),
+    { invariants = InvTable.merge (#invariants d1, #invariants d2),
       hoares = Symtab.merge hoare_eq (#hoares d1, #hoares d2),
       programs = Name_Space.merge_tables (#programs d1, #programs d2),
       current_logic = NONE, options = Symtab.empty }
@@ -264,12 +336,13 @@ fun map_options f = Hoare_Data.map (fn {invariants,hoares,programs,current_logic
   {invariants=invariants, hoares=hoares, programs=programs, current_logic=current_logic, options=f options})
 fun set_current_logic (logic:logic) = Hoare_Data.map (fn {invariants,hoares,programs,current_logic=_,options} => 
   {invariants=invariants, hoares=hoares, programs=programs, current_logic=SOME logic, options=options})
-fun add_invariant0 i = map_invariants (Symtab.update_new (Binding.name_of (#binding i), i))
 fun add_hoare0 i = map_hoares (Symtab.update_new (Binding.name_of (#binding i), i))
 fun add_hoare0decl i m = add_hoare0 (hoare_morphism m i)
-fun get_invariant context name = Symtab.lookup (Hoare_Data.get context |> #invariants) name
-fun get_invariants context = Hoare_Data.get context |> #invariants
-fun get_the_invariant context name = get_invariant context name |> the' (fn _ => "Unknown invariant " ^ name)
+(* fun get_invariant context name = Symtab.lookup (Hoare_Data.get context |> #invariants) name *)
+(* fun get_invariants context = Hoare_Data.get context |> #invariants *)
+fun get_invariant_by_id context = 
+  InvTable.get_by_id (Hoare_Data.get context |> #invariants)
+(* get_invariant context name |> the' (fn _ => "Unknown invariant " ^ name) *)
 fun get_hoare context name = Symtab.lookup (Hoare_Data.get context |> #hoares) name
 fun get_the_hoare context name = get_hoare context name |> the' (fn _ => "Unknown Hoare judgment " ^ name)
 (* TODO check whether 'name' contains markup, if so, raise error. Same in all other getters *)
@@ -277,19 +350,26 @@ fun get_program_internal context name = Name_Space.lookup (Hoare_Data.get contex
 fun get_the_program_internal context name = get_program_internal context name |> the' (fn _ => "Unknown program " ^ name)
 fun get_current_logic context = Hoare_Data.get context |> #current_logic
 fun get_the_current_logic context = get_current_logic context |> the' (fn _ => "No current logic")
-fun map_known_implications f ({known_implications,binding,const,def_thm,logic,serial,term} : invariant) : invariant =
-  {known_implications = f known_implications,binding=binding,const=const,def_thm=def_thm,logic=logic,serial=serial,term=term}
+fun map_known_implications f ({known_implications,serial,const,def_thm,logic,term} : invariant) : invariant =
+  {known_implications = f known_implications,serial=serial,const=const,def_thm=def_thm,logic=logic,term=term}
 
-fun pretty_program_name ctxt name : string= 
+fun pretty_program_name ctxt name : string = 
   Name_Space.pretty ctxt
     (ctxt |> Context.Proof |> Hoare_Data.get |> #programs |> Name_Space.space_of_table) name
     |> Pretty.string_of
 
-fun read_program_name context name : string * program = 
+fun read_program_name context name : program = 
   let val source : Input.source = Syntax.read_input name 
       val pos = Input.pos_of source
       val name' = Input.text_of source
-  in Name_Space.check context (context |> Hoare_Data.get |> #programs) (name',pos) end
+  in Name_Space.check context (context |> Hoare_Data.get |> #programs) (name',pos) |> snd end
+
+fun pretty_invariant_name ctxt id : string = 
+  InvTable.pretty_name_from_id ctxt
+    (ctxt |> Context.Proof |> Hoare_Data.get |> #invariants) id
+
+fun read_invariant_name context name : invariant = 
+  InvTable.check context (context |> Hoare_Data.get |> #invariants) name |> #3
 
 structure Hoare_Proof_Data = Proof_Data (
   (* current_invariant is local to a proof obligation created by a hoare' command *)
@@ -321,8 +401,8 @@ val get_current_invariant_def = get_current_invariant #> Option.map #def_thm
 val get_the_current_invariant_def = get_current_invariant_def
   #> the' (fn _ => "No current invariant")
 
-fun invariant_morph m ({serial,logic,binding,term,const,def_thm,known_implications}:invariant) : invariant =
- {serial=serial, logic=logic, binding=binding, term=Morphism.term m term,
+fun invariant_morph m ({serial,logic,term,const,def_thm,known_implications}:invariant) : invariant =
+ {serial=serial, logic=logic, term=Morphism.term m term,
    const=Morphism.term m const, def_thm=Morphism.thm m def_thm, 
    known_implications=map (Morphism.thm m) known_implications}
 
@@ -337,13 +417,14 @@ fun add_known_implication (invariant:invariant) (implication:thm) context : Cont
   val logic = #logic invariant
   val const = #invariant_implication_lhs logic (implication |> Thm.prop_of |> bool_of_prop)
   val _ = if const = #const invariant then ()
-          else raise THM ("add_known_implication: implication incorrect for invariant "^ name_of_invariant invariant, 1, [implication])
+          else raise THM ("add_known_implication: implication incorrect for invariant "^ pretty_invariant_name (Context.proof_of context) (#serial invariant), 
+                          1, [implication])
 (*   fun update m = let
     val implication' = Morphism.thm m implication
     in map_invariants (Symtab.map_entry invariant_name (map_known_implications 
             (fn is => implication'::is))) end
   val st = #declaration toolkit update st *)
-in map_invariants (Symtab.map_entry (name_of_invariant invariant) (map_known_implications 
+in map_invariants (InvTable.map_entry (#serial invariant) (map_known_implications 
             (fn is => implication::is))) context end
 
 fun declare_invariant_consequences (toolkit:'a toolkit) (logic:logic) (invariant:invariant) (st:'a) = let
@@ -366,11 +447,16 @@ fun add_invariant (toolkit:'st toolkit) (logic:logic) binding (invariant:term) s
   val (invariant_const,thm,st) = 
       #define toolkit (bind "_inv") (bind "_inv_def") invariant st
       (* def' (bind "_inv") invariant ctxt *)
-  val info : invariant = {serial=serial(), logic = logic, binding=binding,
-                          const=invariant_const, term=invariant, def_thm=thm, 
-                          known_implications=[]}
-  val st = #declaration toolkit (fn m => add_invariant0 (invariant_morph m info)) st
-  in (info,st) end
+  val invariant : invariant = 
+        {serial = serial(), logic = logic,
+         const = invariant_const, term = invariant, 
+         def_thm = thm, 
+         known_implications=[]}
+(*  fun add_invariant0 i = map_invariants (Symtab.update_new (Binding.name_of (#binding i), i)) *)
+  val st = #declaration toolkit (fn m => fn context => 
+    map_invariants (InvTable.define
+      context (Morphism.binding m binding, invariant_morph m invariant)) context) st
+  in (invariant, st) end
 
 fun parse_src expect ctxt (parser:'a context_parser) (src:Token.src) : 'a = let
   val eof = Parse.group expect Parse.eof |> Scan.lift
@@ -390,9 +476,9 @@ fun join_hoare (toolkit:'a toolkit) binding (hoare1:string) (hoare2:string) (st:
           error (\<^make_string>("mismatch",#postcondition hoare1',#precondition hoare2')) else ()
   (* val program' = program |> get_the_program context *)
   (* val logic = program' |> #logic |> get_the_logic' ctxt *)
-  val a = hoare1' |> #precondition |> get_the_invariant context |> #const
-  val b = hoare1' |> #postcondition |> get_the_invariant context |> #const
-  val c = hoare2' |> #postcondition |> get_the_invariant context |> #const
+  val a = hoare1' |> #precondition |> get_invariant_by_id context |> #const
+  val b = hoare1' |> #postcondition |> get_invariant_by_id context |> #const
+  val c = hoare2' |> #postcondition |> get_invariant_by_id context |> #const
   val logic = #logic hoare1'
   val (range,joined_thm) = #join_hoare logic ctxt a (#range hoare1') b (#range hoare2') c
           (#valid hoare1') (#valid hoare2')
@@ -455,7 +541,7 @@ val _ = print_with_markup content
     (* val prog : program = {logic=logic, code=program} *)
     val (prog,context) = map_result map_programs (name_space_define_with_name context
       dummy_program (Morphism.binding m binding) 
-      (fn name => program_morphism m {name=name, logic=logic, code=program}))   context
+      (fn name => {name=name, logic=logic, code=Morphism.term m program}))   context
     val context = set_option logic "@last_program" (#name prog) m context
     in context end
   val st = #declaration toolkit add_program0decl st
@@ -511,11 +597,11 @@ fun filter_OF (thms1:thm list) (thms2:thm list) : thm list =
   thms |> map_filter (fn thm' => SOME (Drule.infer_instantiate ctxt [(var,value)] thm') handle THM _ => NONE) *)
 
 (* Raises TERM or TYPE if not found *)
-fun get_invariant_from_implication' (ctxt:Proof.context) (logic:logic) (t:term) = let
+fun get_invariant_from_implication' (context:Context.generic) (logic:logic) (t:term) = let
   val const = #invariant_implication_lhs logic (bool_of_prop t)
-  val inv = case get_invariants (Context.Proof ctxt) |> Symtab.get_first 
+  val inv = case context |> Hoare_Data.get |> #invariants |> InvTable.get_first 
 (* TODO: discard invariants from a different logic *)
-                   (fn (_,inv) => if #const inv = const then SOME inv else NONE)
+                   (fn inv => if #const inv = const then SOME inv else NONE)
             of SOME inv => inv | NONE => raise TERM("get_invariant_from_implication'", [t,const])
 in inv end
 
@@ -527,16 +613,16 @@ fun name_space_get_first (f:string*'a->'b option) (table:'a Name_Space.table) = 
   in found end
 
 (* TODO: rewrite: we don't need to loop over logics separately since invariants carry the logic *)
-fun get_invariant_from_implication (ctxt:Proof.context) (t:term) = let
-  val inv = Logic_Data.get (Proof_Context.theory_of ctxt) |> name_space_get_first
-    (fn (_,logic) => SOME (get_invariant_from_implication' ctxt logic t)
+fun get_invariant_from_implication (context:Context.generic) (t:term) = let
+  val inv = Logic_Data.get (Context.theory_of context) |> name_space_get_first
+    (fn (_,logic) => SOME (get_invariant_from_implication' context logic t)
         handle TERM _ => NONE | TYPE _ => NONE | Match => NONE)
-  in inv |> the' (fn _ => "Could not identify invariant in the lhs of " ^ Syntax.string_of_term ctxt t) end
-
+  in inv |> the' (fn _ => "Could not identify invariant in the lhs of " ^ 
+                        Syntax.string_of_term (Context.proof_of context) t) end
 
 fun add_known_implication_auto (implication:thm) context : Context.generic = let
-  val ctxt = Context.proof_of context
-  val invariant = get_invariant_from_implication ctxt (Thm.prop_of implication)
+  (* val ctxt = Context.proof_of context *)
+  val invariant = get_invariant_from_implication context (Thm.prop_of implication)
   val context = add_known_implication invariant implication context
   in context end
 
@@ -561,15 +647,15 @@ fun auto_subgoal_tac lenient (logic:logic) ctxt = SUBGOAL (fn (t,i) => case t of
         try (tac THEN_ALL_NEW auto_subgoal_tac lenient logic ctxt)) i end
   | _ => all_tac)
 
-fun current_invariant_tac lenient OFs thms ctxt = SUBGOAL (fn (t,i) => let
+fun current_invariant_tac lenient OFs thms (ctxt:Proof.context) = SUBGOAL (fn (t,i) => let
   val thms = thms ctxt
   val inv = case get_current_invariant ctxt of SOME inv => inv
               | NONE => let
                   val t = bool_of_prop t handle TERM(msg,Ts) => raise TERM("current_invariant_tac: "^msg,Ts)
-                  in get_invariant_from_implication ctxt t end
+                  in get_invariant_from_implication (Context.Proof ctxt) t end
   val logic = #logic inv
   val inv_def = #def_thm inv
-  val inv_markup_name = #binding inv |> string_of_binding_invariant
+  val inv_markup_name = pretty_invariant_name ctxt (#serial inv)
   val thms_inst = filter_OF thms [inv_def]
   val _ = tracing' (fn _ => "Available rules for invariant " ^ inv_markup_name ^ ":")
   val _ = if null OFs then () else tracing' (fn _ => "([\<star>] marks rules that can be instantiated with current facts)")
@@ -640,14 +726,12 @@ fun auto_preserve_invariant_implications (toolkit:'a toolkit) implications (new_
 in st end
 
 
-fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:string) (postcondition:string) (st:'a) : Proof.state = let
+fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:serial) (postcondition:serial) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
   (* val program = get_the_program context program *)
-  val precondition = case get_invariant context precondition of
-    SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
-  val postcondition = case get_invariant context postcondition of
-    SOME inv => inv | NONE => error ("Undefined postcondition " ^ postcondition)
+  val precondition = get_invariant_by_id context precondition
+  val postcondition = get_invariant_by_id context postcondition
   fun bind suffix = Binding.suffix_name suffix binding
   (* val logic = get_the_logic (Context.theory_of context) (#logic program) *)
 (*   val _ = if #valid_range logic range then ()
@@ -660,8 +744,8 @@ fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (preco
   val valid_prop = #hoare_thm logic ctxt (#const precondition) program_fragment (#const postcondition)
   fun after_qed valid st = let
       val info : hoare = {serial=serial(), binding=binding, range=range,
-        precondition=Binding.name_of (#binding precondition),
-        postcondition=Binding.name_of (#binding postcondition),
+        precondition = #serial precondition,
+        postcondition = #serial postcondition,
         program_fragment_const=program_fragment_const,
         logic = logic,
         (* program=program |> #binding |> Binding.name_of, *)
@@ -676,19 +760,18 @@ fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (preco
 in state end
 
 
-fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:string) 
+fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:serial) 
     (postcondition:binding) (make_post:string) (make_post_args:Token.src) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
   val program_fragment = (#extract_range logic) ctxt range
-  val precondition' = case get_invariant context precondition of
-    SOME inv => inv | NONE => error ("Undefined precondition " ^ precondition)
+  val precondition' = get_invariant_by_id context precondition
   val make_post' = get_the_postcondition_generator context logic make_post ctxt program_fragment (#const precondition')
   val (post,tac) = parse_src (fn _ =>  "end of arguments to " ^ make_post) ctxt make_post' make_post_args
   val _ = catch_internal_error (#name logic) ("typechecking result of postcondition generator "^make_post)
             (Sign.cert_term (Proof_Context.theory_of ctxt)) post
   val (post,st) = add_invariant toolkit logic postcondition post st
-  val state = new_hoare toolkit binding after_qed0 logic range precondition (Binding.name_of postcondition) st
+  val state = new_hoare toolkit binding after_qed0 logic range precondition (#serial post) st
   val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
     |> Seq.first_result "could not unfold definition of postcondition (internal error)"
   fun tac' ctxt = tac ctxt THEN ALLGOALS (auto_subgoal_tac false logic ctxt)
@@ -722,11 +805,11 @@ fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (r
   val state = case extends of
     NONE => (case pre of
              NONE => error "Please specify precondition (pre) or previous Hoare judgment (extends)"
-             | SOME pre => new_hoare_auto toolkit name fst logic range' pre post make_post make_post_args st)
+             | SOME pre => let 
+                val pre = read_invariant_name context pre |> #serial
+                in new_hoare_auto toolkit name fst logic range' pre post make_post make_post_args st end)
     | SOME previous => extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st
   in state end
-
-
 
 fun preserve_command (toolkit:'a toolkit) invs (in_inv:string) (state:'a) = let
   val ctxt = #context toolkit state |> Context.proof_of
@@ -735,7 +818,7 @@ fun preserve_command (toolkit:'a toolkit) invs (in_inv:string) (state:'a) = let
     val _ = tracing ("Processing " ^ thm_ref_str)
     val thm = case Attrib.eval_thms ctxt [thm_ref] of [thm] => thm
                 | _ => error ("Fact "^thm_ref_str^" consists of more than one theorem")
-    val inv2 = get_the_invariant (Context.Proof ctxt) in_inv
+    val inv2 = read_invariant_name (Context.Proof ctxt) in_inv
     val ii2 = preserve_invariant_implication ctxt thm inv2
     val state = #note toolkit binding ii2 state
   in state end
@@ -761,7 +844,7 @@ fun mark_atoms tm =
 
 fun invariant_implication_tr ctxt [inv1_var,inv2] = let
     val inv1_name = case inv1_var of Free(n,_) => n | _ => error "_invariant_implication parse_translation 1"
-    val inv1 = get_the_invariant (Context.Proof ctxt) inv1_name
+    val inv1 = read_invariant_name (Context.Proof ctxt) inv1_name
     val logic = #logic inv1
     val inv1_const = #const inv1 |> mark_atoms
     val inv2_tr = inv2 |> #invariant_parse_translation logic ctxt (#const inv1)
