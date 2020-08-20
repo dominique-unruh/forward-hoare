@@ -186,10 +186,12 @@ fun get_the_postcondition_generator context (logic:logic) make_post =
 
 
 type var = string
-type program = { code: term, logic: logic }
+type program = { name: string, code: term, logic: logic }
 
-fun program_morphism m ({code,logic}:program) : program = let
-  in {logic=logic,
+val dummy_program : program = {name="", code=\<^term>\<open>A\<close>, logic=dummy_logic}
+
+fun program_morphism m ({code,logic,name}:program) : program = let
+  in {logic=logic, name=name,
       code = Morphism.term m code} end
 
 (* fun program_eq (p1:program,p2:program) = #serial p1 = #serial p2 *)
@@ -450,9 +452,11 @@ val _ = print_with_markup content
   val (_,_,st) = #define toolkit binding (Binding.suffix_name "_def" binding) program st
   (* val name = Binding.name_of binding *)
   fun add_program0decl (m:morphism) context = let
-  val prog : program = {logic=logic, code=program}
-    val (name,context) = map_result map_programs (Name_Space.define context false (binding, program_morphism m prog)) context
-    val context = set_option logic "@last_program" name m context
+    (* val prog : program = {logic=logic, code=program} *)
+    val (prog,context) = map_result map_programs (name_space_define_with_name context
+      dummy_program (Morphism.binding m binding) 
+      (fn name => program_morphism m {name=name, logic=logic, code=program}))   context
+    val context = set_option logic "@last_program" (#name prog) m context
     in context end
   val st = #declaration toolkit add_program0decl st
 in st end
