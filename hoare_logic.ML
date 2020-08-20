@@ -57,6 +57,8 @@ type options = Logic.options
 exception Range of range
 exception Options of options
 
+val pretty_logic = string_of_binding_logic Logic.binding
+
 fun err str = error (Binding.name_of Logic.binding ^ "." ^ str)
 
 (* fun read_program ctxt str = Ex_Program (Program (Logic.read_program ctxt str)) *)
@@ -80,7 +82,7 @@ fun pretty_range ctxt range = Logic.pretty_range ctxt (range_ex range)
 (* fun valid_range prog range = Logic.valid_range prog (range_ex range) *)
 fun extract_range ctxt range = let
   val fragment = Logic.extract_range ctxt (range_ex range)
-  val _ = catch_internal_error Logic.binding "typechecking result of extract_range" (Sign.cert_term (Proof_Context.theory_of ctxt)) fragment
+  val _ = catch_internal_error pretty_logic "typechecking result of extract_range" (Sign.cert_term (Proof_Context.theory_of ctxt)) fragment
   in fragment end
 
 fun join_hoare ctxt a r1 b r2 c h1 h2 = Logic.join_hoare ctxt a (range_ex r1) b (range_ex r2) c h1 h2
@@ -88,12 +90,12 @@ fun join_hoare ctxt a r1 b r2 c h1 h2 = Logic.join_hoare ctxt a (range_ex r1) b 
 
 fun hoare_thm ctxt pre prog post = let
   val term = Logic.hoare_thm ctxt pre prog post
-  val _ = catch_internal_error Logic.binding "typechecking result of hoare_thm" (Sign.cert_prop (Proof_Context.theory_of ctxt)) term
+  val _ = catch_internal_error pretty_logic "typechecking result of hoare_thm" (Sign.cert_prop (Proof_Context.theory_of ctxt)) term
   in term end
 
 fun invariant_implication ctxt a b = let
   val term = Logic.invariant_implication ctxt a b
-  val checked_term = catch_internal_error Logic.binding "typechecking result of invariant_implication" (Sign.cert_term (Proof_Context.theory_of ctxt)) term
+  val checked_term = catch_internal_error pretty_logic "typechecking result of invariant_implication" (Sign.cert_term (Proof_Context.theory_of ctxt)) term
   val _ = if fastype_of checked_term <> HOLogic.boolT
           then error "typechecking result of invariant_implication: not of type bool" else ()
   in term end
@@ -109,33 +111,42 @@ fun invariant_typ options = Logic.invariant_typ (options_ex options)
 
 (* fun program_morphism m prog = ex_program (Logic.program_morphism m (program_ex prog)) *)
 
-val logic : logic = {
-  serial = serial(),
-  binding = Logic.binding,
-  program_term_typ = program_term_typ,
-  invariant_typ = invariant_typ,
-  check_program = Logic.check_program,
-  check_invariant = Logic.check_invariant,
-  (* read_program = read_program, *)
-  read_range = read_range,
-  pretty_range = pretty_range,
-  extract_range = extract_range,
-  (* valid_range = valid_range, *)
-  hoare_thm = hoare_thm,
-  (* read_invariant = Logic.read_invariant, *)
-  join_hoare = join_hoare,
-  postcondition_generators = Symtab.make Logic.postcondition_generators,
-  invariant_implication = invariant_implication,
-  invariant_implication_syntax = Logic.invariant_implication,
-  invariant_parse_translation = Logic.invariant_parse_translation,
-  invariant_implication_lhs = Logic.invariant_implication_lhs,
-  default_options = default_options,
-  set_option = set_option,
-  subgoal_tactics = Symtab.make Logic.subgoal_tactics,
-  invariant_consequences = Logic.invariant_consequences
-}
+local
+fun mk_logic name : logic = {
+    name = name,
+    (* serial = serial(), *)
+    (* binding = Logic.binding, *)
+    program_term_typ = program_term_typ,
+    invariant_typ = invariant_typ,
+    check_program = Logic.check_program,
+    check_invariant = Logic.check_invariant,
+    (* read_program = read_program, *)
+    read_range = read_range,
+    pretty_range = pretty_range,
+    extract_range = extract_range,
+    (* valid_range = valid_range, *)
+    hoare_thm = hoare_thm,
+    (* read_invariant = Logic.read_invariant, *)
+    join_hoare = join_hoare,
+    postcondition_generators = Symtab.make Logic.postcondition_generators,
+    invariant_implication = invariant_implication,
+    invariant_implication_syntax = Logic.invariant_implication,
+    invariant_parse_translation = Logic.invariant_parse_translation,
+    invariant_implication_lhs = Logic.invariant_implication_lhs,
+    default_options = default_options,
+    set_option = set_option,
+    subgoal_tactics = Symtab.make Logic.subgoal_tactics,
+    invariant_consequences = Logic.invariant_consequences
+  }
+
+in
+val logic = Context.>>> (fn context => Context.map_theory_result (fn thy => let
+  val table = Logic_Data.get thy
+  val (logic,table) = name_space_define_with_name context dummy_logic Logic.binding mk_logic table
+  val thy = Logic_Data.put table thy
+  in (logic,thy) end) context)
 
 val _ = Logic.this_logic_reference := SOME logic
+end
 
-val _ = Context.>> (Context.map_theory (Logic_Data.map (Symtab.update_new (Binding.name_of Logic.binding, logic))))
 end

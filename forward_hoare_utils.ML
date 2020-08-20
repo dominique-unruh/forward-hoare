@@ -34,7 +34,8 @@ fun set_last_program name (_:options) = {last_program = SOME name}
 val default_options = {last_program = NONE}
 (* Default implementation *)
 fun set_option "@last_program" name _ _ = set_last_program name
-  | set_option name _ _ _ = error ("Unknown option " ^ name ^ " for logic " ^ name_of_logic (this_logic()))
+  | set_option name _ ctxt _ = error ("Unknown option " ^ name ^ " for logic " ^ 
+      pretty_logic_name ctxt (this_logic() |> #name))
 
 fun get_current_program_name ({last_program}:options) = last_program |> the' (fn _ => "No current program defined")
 
@@ -42,8 +43,9 @@ fun get_current_program_name ({last_program}:options) = last_program |> the' (fn
 fun get_my_program ctxt name = let
   val context = Context.Proof ctxt
   val prog : program = get_the_program_internal context name
-  val _ = if #logic prog = name_of_logic (this_logic()) then ()
-          else error (program_name_extern ctxt name ^ " is from logic " ^ #logic prog ^ " but needed a program from logic " ^ name_of_logic (this_logic()))
+  val _ = if #name (#logic prog) = #name (this_logic()) then ()
+          else error (pretty_program_name ctxt name ^ " is from logic " ^ pretty_logic_name ctxt (#name (#logic prog)) 
+                ^ " but needed a program from logic " ^ pretty_logic_name ctxt (#name (this_logic())))
   in #code prog end
 
 (* Default implementation *)
