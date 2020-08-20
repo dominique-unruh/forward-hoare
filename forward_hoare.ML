@@ -1,66 +1,5 @@
-functor Name_Table_Serial(Config: sig 
-  type T
-  val get_id : T -> serial
-  (* Can raise Same.SAME or ERROR *)
-  val merge : T * T -> T
-end) : sig
-  type T = Config.T
-  type table
-  val empty : string -> table
-  val define : Context.generic -> (binding * Config.T) -> table -> table
-  val merge : table * table -> table
-  val get_id : Config.T -> serial
-  val get_by_id : table -> serial -> T
-  val get_by_name : table -> string -> T
-  val get_name_by_id : table -> serial -> string
-  val pretty_name : Proof.context -> table -> string -> string
-  val pretty_name_from_id : Proof.context -> table -> serial -> string
-  val check : Context.generic -> table -> string -> string * serial * T
-  val map_entry : serial -> (T -> T) -> table -> table
-  val get_first: (T -> 'a option) -> table -> 'a option
-end = struct
-type T = Config.T
-val get_id = Config.get_id
-type table = {name_table: serial Name_Space.table, entry_table: (T*string) Inttab.table}
-fun empty name : table = {name_table = Name_Space.empty_table name, 
-                                    entry_table = Inttab.empty}
-fun define context (binding,entry) ({name_table,entry_table}:table) : table = let
-  val id = get_id entry
-  val (name,name_table) = Name_Space.define context false (binding,id) name_table
-  val entry_table = Inttab.update_new (id,(entry,name)) entry_table
-  in {name_table=name_table,entry_table=entry_table} end
-fun merge_entry name_space id ((entry1,name1), (entry2,name2)) =
-     if name1 <> name2 then error ("When joining name space '"^ Name_Space.kind_of (Name_Space.space_of_table name_space) ^"': mismatch of names "^name1^" vs "^name2^" for same id")
-     else (Config.merge (entry1,entry2), name1)
-          handle ERROR msg => raise ERROR ("Cannot merge entry "^name1^" in table " ^ Name_Space.kind_of (Name_Space.space_of_table name_space))
-fun merge (table1:table, table2:table) : table =
-  {name_table = Name_Space.merge_tables (#name_table table1, #name_table table2),
-   entry_table = Inttab.join (merge_entry (#name_table table1)) (#entry_table table1, #entry_table table2)}
-fun kind_of table = Name_Space.kind_of (Name_Space.space_of_table (#name_table table))
-fun get_both_by_id (table:table) id : T * string = case Inttab.lookup (#entry_table table) id of
-  NONE => error ("No " ^ kind_of table ^ " with id " ^ string_of_int id ^ " found")
-  | SOME result => result
-fun get_by_id table id = get_both_by_id table id |> fst
-fun get_name_by_id table id = get_both_by_id table id |> snd
-fun get_by_name table name = get_by_id table (Name_Space.get (#name_table table) name)
-fun pretty_name ctxt table name = Name_Space.pretty ctxt (#name_table table |> Name_Space.space_of_table) name |> Pretty.string_of
-fun pretty_name_from_id ctxt table id = pretty_name ctxt table (get_name_by_id table id)
-fun check context table str = let
-  val source : Input.source = Syntax.read_input str
-  val pos = Input.pos_of source
-  val xname = Input.text_of source
-  val (name,id) = Name_Space.check context (#name_table table) (xname,pos)
-  val entry = get_by_id table id
-  in (name,id,entry) end
-fun map_entry id f {name_table, entry_table} =
-  {name_table=name_table, entry_table=Inttab.map_entry id (apfst f) entry_table}
-fun get_first (f:T->'a option) table : 'a option =
-  Inttab.get_first (fn (_,(x,_)) => f x) (#entry_table table)
-end
-
 structure Forward_Hoare =
 struct
-
 
 fun name_space_define_with_name context dummy binding value_fun table = let
   val (name,table) = Name_Space.define context false (binding,dummy) table
@@ -168,7 +107,7 @@ datatype ex_range = Ex_Range of exn
 datatype ex_options = Ex_Options of exn
 
 type logic = {
-  name: string,
+  serial: serial,
   program_term_typ: ex_options -> typ,
   check_program: Proof.context -> term -> unit,
   read_range: ex_options -> ex_range option -> ex_range context_parser,
@@ -190,7 +129,7 @@ type logic = {
 }
 
 
-val dummy_logic : logic = let fun err _ = error "dummy_logic" in {
+(* val dummy_logic : logic = let fun err _ = error "dummy_logic" in {
   name="",
   program_term_typ = err,
   check_program = err,
@@ -210,41 +149,42 @@ val dummy_logic : logic = let fun err _ = error "dummy_logic" in {
   set_option = err,
   subgoal_tactics = Symtab.empty,
   invariant_consequences = err
-} end
+} end *)
+
+structure LogicTable = Name_Table_Serial(
+  type T = logic
+  val get_id = #serial
+  fun merge _ = raise Same.SAME
+)
 
 (* fun name_of_logic ({binding,...}:logic) = Binding.name_of binding *)
 (* fun same_logic (l1:logic) (l2:logic) = (#serial l1 = #serial l2) *)
 
-(* TODO: use a Name_Table_Serial for logics, too *)
 structure Logic_Data = Theory_Data(
-  type T = logic Name_Space.table
-  val empty = Name_Space.empty_table "hoare logic"
-  val merge = Name_Space.merge_tables
+  type T = LogicTable.table
+  val empty = LogicTable.empty "hoare logic"
+  val merge = LogicTable.merge
   val extend = I
 )
 
-fun pretty_logic_name ctxt logic : string =
-  Name_Space.pretty ctxt
-    (Name_Space.space_of_table (Logic_Data.get (Proof_Context.theory_of ctxt))) logic
-    |> Pretty.string_of
+fun pretty_logic_name ctxt id : string =
+  LogicTable.pretty_name_from_id ctxt
+    (ctxt |> Proof_Context.theory_of |> Logic_Data.get) id
 
 fun read_logic_name context name : logic = 
-  let val source : Input.source = Syntax.read_input name 
-      val pos = Input.pos_of source
-      val name' = Input.text_of source
-  in Name_Space.check context (context |> Context.theory_of |> Logic_Data.get) (name',pos) |> snd end
-
+  LogicTable.check context (context |> Context.theory_of |> Logic_Data.get) name |> #3
 
 (* fun get_logic thy name = Symtab.lookup (Logic_Data.get thy) name *)
 (* fun get_logics thy = Logic_Data.get thy *)
-fun get_the_logic thy = Name_Space.get (Logic_Data.get thy)
+(* fun get_the_logic thy = Name_Space.get (Logic_Data.get thy) *)
 (* fun get_logic' ctxt = get_logic (Proof_Context.theory_of ctxt) *)
-fun get_the_logic' ctxt = get_the_logic (Proof_Context.theory_of ctxt)
+(* fun get_the_logic' ctxt = get_the_logic (Proof_Context.theory_of ctxt) *)
+fun get_logic thy = LogicTable.get_by_id (Logic_Data.get thy)
 
 fun get_the_postcondition_generator context (logic:logic) make_post =
  Symtab.lookup (#postcondition_generators logic) make_post 
  |> the' (fn _ => "Unknown postcondition generator " ^ make_post ^ " in logic " ^ 
-                  #name logic |> pretty_logic_name (Context.proof_of context))
+                  (#serial logic |> pretty_logic_name (Context.proof_of context)))
 
 
 type var = string
@@ -318,18 +258,17 @@ structure Hoare_Data = Generic_Data (
              hoares: HoareTable.table,
              programs: ProgTable.table,
              current_logic: logic option,
-             options: ex_options Symtab.table
+             options: ex_options Inttab.table
   }
   val empty = { invariants=InvTable.empty "invariant", hoares=HoareTable.empty "hoare",
-    programs=ProgTable.empty "program", current_logic=NONE, options=Symtab.empty }
+    programs=ProgTable.empty "program", current_logic=NONE, options=Inttab.empty }
   fun merge (d1,d2) =
     { invariants = InvTable.merge (#invariants d1, #invariants d2),
       hoares = HoareTable.merge (#hoares d1, #hoares d2),
       programs = ProgTable.merge (#programs d1, #programs d2),
-      current_logic = NONE, options = Symtab.empty }
+      current_logic = NONE, options = Inttab.empty }
   fun extend {invariants,hoares,programs,current_logic=_,options} =
-    {invariants=invariants, hoares=hoares, programs=programs, current_logic=NONE, options=options}
-)
+    {invariants=invariants, hoares=hoares, programs=programs, current_logic=NONE, options=options})
 
 fun map_result map f st = let
   val result_ref = Unsynchronized.ref NONE
@@ -357,7 +296,6 @@ fun get_invariant_by_id context =
 (* get_invariant context name |> the' (fn _ => "Unknown invariant " ^ name) *)
 fun get_hoare_by_id context id = HoareTable.get_by_id (Hoare_Data.get context |> #hoares) id
 (* fun get_the_hoare context name = get_hoare context name |> the' (fn _ => "Unknown Hoare judgment " ^ name) *)
-(* TODO check whether 'name' contains markup, if so, raise error. Same in all other getters *)
 (* fun get_program_internal context name = Name_Space.lookup (Hoare_Data.get context |> #programs) name *)
 fun get_program_by_id context id = ProgTable.get_by_id (Hoare_Data.get context |> #programs) id
 fun get_program_by_name context name = ProgTable.get_by_name (Hoare_Data.get context |> #programs) name
@@ -394,8 +332,8 @@ structure Hoare_Proof_Data = Proof_Data (
 )
 
 
-fun get_options logic context = 
-  case Symtab.lookup (Hoare_Data.get context |> #options) (#name logic) of 
+fun get_options (logic:logic) context = 
+  case Inttab.lookup (Hoare_Data.get context |> #options) (#serial logic) of 
     SOME options => options
   | NONE => #default_options logic
 
@@ -403,7 +341,7 @@ fun set_option (logic:logic) name content m context = let
   val ctxt = Context.proof_of context
   val options = get_options logic context
   val options = #set_option logic name content ctxt m options
-  val context = map_options (Symtab.update (#name logic, options)) context
+  val context = map_options (Inttab.update (#serial logic, options)) context
   in context end
 
 
@@ -424,7 +362,7 @@ fun invariant_morph m ({serial,logic,term,const,def_thm,known_implications}:inva
 
 fun catch_internal_error logic func f x = f x
    handle TYPE(msg, Ts, ts) => 
-   raise TYPE("Internal error " ^ func ^ " (logic " ^ logic ^ "): " ^ msg, Ts, ts)
+   raise TYPE("Internal error " ^ func() ^ " (logic " ^ logic() ^ "): " ^ msg, Ts, ts)
 
 
 fun add_known_implication (invariant:invariant) (implication:thm) context : Context.generic = let
@@ -486,10 +424,10 @@ fun join_hoare (toolkit:'a toolkit) binding (hoare1:serial) (hoare2:serial) (st:
   val hoare2' = get_hoare_by_id context hoare2
   (* val program = #program hoare1' *)
   (* val _ = if #program hoare1' <> #program hoare2' then error "mismatch" else () *)
-  val _ = if #name (#logic hoare1') = #name (#logic hoare2') then () 
-          else error (\<^make_string>("mismatch",#name (#logic hoare1'),#name (#logic hoare2')))
+  val _ = if #serial (#logic hoare1') = #serial (#logic hoare2') then () 
+          else error "mismatch"
   val _ = if #postcondition hoare1' <> #precondition hoare2' then 
-          error (\<^make_string>("mismatch",#postcondition hoare1',#precondition hoare2')) else ()
+          error "mismatch" else ()
   (* val program' = program |> get_the_program context *)
   (* val logic = program' |> #logic |> get_the_logic' ctxt *)
   val a = hoare1' |> #precondition |> get_invariant_by_id context |> #const
@@ -538,14 +476,15 @@ fun read_term_typed ctxt T str = let
   in t end
 
 fun set_current_logic_command (toolkit:'a toolkit) (logic:logic) st = let
-  val _ = tracing ("Setting current logic to " ^ pretty_logic_name (#context toolkit st |> Context.proof_of) (#name logic))
+  val _ = tracing' (fn _ => "Setting current logic to " ^ pretty_logic_name 
+            (#context toolkit st |> Context.proof_of) (#serial logic))
   in #declaration toolkit (K (set_current_logic logic)) st end
 
 fun define_program_command (toolkit:'a toolkit) (logic:string) binding content (st:'a) : 'a = let
 val _ = print_with_markup content
   val context = #context toolkit st
   val ctxt = Context.proof_of context
-  val thy = Context.theory_of context
+  (* val thy = Context.theory_of context *)
   val logic = read_logic_name context logic
   val options = get_options logic context
   val program = read_term_typed ctxt (#program_term_typ logic options) content
@@ -580,7 +519,8 @@ fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : '
   val options = get_options logic context
   val term = read_term_typed ctxt (#invariant_typ logic options) content
   val _ = #check_invariant logic ctxt term
-  val _ = tracing ("Declaring invariant "^ string_of_binding_invariant name ^ " in logic " ^ pretty_logic_name ctxt (#name logic))
+  val _ = tracing ("Declaring invariant "^ string_of_binding_invariant name ^ " in logic " ^ 
+                  pretty_logic_name ctxt (#serial logic))
   val st = set_current_logic_command toolkit logic st
   val (invariant,st) = add_invariant toolkit logic name term st
   val st = declare_invariant_consequences toolkit logic invariant st
@@ -622,17 +562,17 @@ fun get_invariant_from_implication' (context:Context.generic) (logic:logic) (t:t
             of SOME inv => inv | NONE => raise TERM("get_invariant_from_implication'", [t,const])
 in inv end
 
-fun name_space_get_first (f:string*'a->'b option) (table:'a Name_Space.table) = let
+(* fun name_space_get_first (f:string*'a->'b option) (table:'a Name_Space.table) = let
   exception Found of 'b
   fun check (name,x) () = case f (name,x) of NONE => () | SOME y => raise Found y
   val found = (Name_Space.fold_table check table (); NONE)
               handle Found x => SOME x
-  in found end
+  in found end *)
 
 (* TODO: rewrite: we don't need to loop over logics separately since invariants carry the logic *)
 fun get_invariant_from_implication (context:Context.generic) (t:term) = let
-  val inv = Logic_Data.get (Context.theory_of context) |> name_space_get_first
-    (fn (_,logic) => SOME (get_invariant_from_implication' context logic t)
+  val inv = Logic_Data.get (Context.theory_of context) |> LogicTable.get_first
+    (fn logic => SOME (get_invariant_from_implication' context logic t)
         handle TERM _ => NONE | TYPE _ => NONE | Match => NONE)
   in inv |> the' (fn _ => "Could not identify invariant in the lhs of " ^ 
                         Syntax.string_of_term (Context.proof_of context) t) end
@@ -658,7 +598,8 @@ fun auto_subgoal_tac lenient (logic:logic) ctxt = SUBGOAL (fn (t,i) => case t of
     val tac = case str of 
                 _ => case Symtab.lookup (#subgoal_tactics logic) str of
                        SOME tac => tac ctxt
-                      | NONE => raise TERM("auto_subgoal_tac: unknown tactic "^str^" for logic "^ pretty_logic_name ctxt (#name logic), [t])
+                      | NONE => raise TERM("auto_subgoal_tac: unknown tactic "^str^" for logic "^ 
+                                pretty_logic_name ctxt (#serial logic), [t])
     val try = if lenient then fn tac => fn i => TRY (tac i) else I
     in (resolve_tac ctxt @{thms remove_SOLVE_WITH} THEN' 
         try (tac THEN_ALL_NEW auto_subgoal_tac lenient logic ctxt)) i end
@@ -785,7 +726,8 @@ fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (
   val precondition' = get_invariant_by_id context precondition
   val make_post' = get_the_postcondition_generator context logic make_post ctxt program_fragment (#const precondition')
   val (post,tac) = parse_src (fn _ =>  "end of arguments to " ^ make_post) ctxt make_post' make_post_args
-  val _ = catch_internal_error (#name logic) ("typechecking result of postcondition generator "^make_post)
+  val _ = catch_internal_error (fn _ => pretty_logic_name ctxt (#serial logic))
+            (fn _ => "typechecking result of postcondition generator "^make_post)
             (Sign.cert_term (Proof_Context.theory_of ctxt)) post
   val (post,st) = add_invariant toolkit logic postcondition post st
   val state = new_hoare toolkit binding after_qed0 logic range precondition (#serial post) st
@@ -901,7 +843,6 @@ val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>invariant'\<close> "
         (define_invariant_command lthy_toolkit logic name content))) *)
 
 val name_parser = Parse.binding --| Args.colon
-(* TODO: parse program name *)
 val extends_parser = Args.$$$ "extends" |-- Parse.name |> Scan.option
 val range_parser = Args.$$$ "range" |-- tokens_parser
   (Token.keyword_with (fn x => x="pre" orelse x="post"))

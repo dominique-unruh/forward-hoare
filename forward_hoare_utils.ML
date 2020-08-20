@@ -27,6 +27,8 @@ val this_logic_reference: Forward_Hoare.logic option Unsynchronized.ref = Unsync
 fun this_logic () : Forward_Hoare.logic =
   !this_logic_reference |> the' (fn _ => "INTERNAL ERROR: this_logic_reference undefined")
 
+fun this_logic_pretty ctxt = pretty_logic_name ctxt (#serial (this_logic()))
+
 (* Default implementation *)
 type options = {last_program: string option}
 fun set_last_program name (_:options) = {last_program = SOME name}
@@ -35,7 +37,7 @@ val default_options = {last_program = NONE}
 (* Default implementation *)
 fun set_option "@last_program" name _ _ = set_last_program name
   | set_option name _ ctxt _ = error ("Unknown option " ^ name ^ " for logic " ^ 
-      pretty_logic_name ctxt (this_logic() |> #name))
+      this_logic_pretty ctxt)
 
 fun get_current_program_name ({last_program}:options) = last_program |> the' (fn _ => "No current program defined")
 
@@ -43,9 +45,9 @@ fun get_current_program_name ({last_program}:options) = last_program |> the' (fn
 fun get_my_program ctxt name = let
   val context = Context.Proof ctxt
   val prog : program = get_program_by_name context name
-  val _ = if #name (#logic prog) = #name (this_logic()) then ()
-          else error (pretty_program_name ctxt (#serial prog) ^ " is from logic " ^ pretty_logic_name ctxt (#name (#logic prog)) 
-                ^ " but needed a program from logic " ^ pretty_logic_name ctxt (#name (this_logic())))
+  val _ = if #serial (#logic prog) = #serial (this_logic()) then ()
+          else error (pretty_program_name ctxt (#serial prog) ^ " is from logic " ^ pretty_logic_name ctxt (#serial (#logic prog)) 
+                ^ " but needed a program from logic " ^ this_logic_pretty ctxt)
   in #code prog end
 
 (* Default implementation *)

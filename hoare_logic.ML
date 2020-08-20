@@ -82,7 +82,8 @@ fun pretty_range ctxt range = Logic.pretty_range ctxt (range_ex range)
 (* fun valid_range prog range = Logic.valid_range prog (range_ex range) *)
 fun extract_range ctxt range = let
   val fragment = Logic.extract_range ctxt (range_ex range)
-  val _ = catch_internal_error pretty_logic "typechecking result of extract_range" (Sign.cert_term (Proof_Context.theory_of ctxt)) fragment
+  val _ = catch_internal_error (K pretty_logic) (K "typechecking result of extract_range")
+          (Sign.cert_term (Proof_Context.theory_of ctxt)) fragment
   in fragment end
 
 fun join_hoare ctxt a r1 b r2 c h1 h2 = Logic.join_hoare ctxt a (range_ex r1) b (range_ex r2) c h1 h2
@@ -90,12 +91,14 @@ fun join_hoare ctxt a r1 b r2 c h1 h2 = Logic.join_hoare ctxt a (range_ex r1) b 
 
 fun hoare_thm ctxt pre prog post = let
   val term = Logic.hoare_thm ctxt pre prog post
-  val _ = catch_internal_error pretty_logic "typechecking result of hoare_thm" (Sign.cert_prop (Proof_Context.theory_of ctxt)) term
+  val _ = catch_internal_error (K pretty_logic) (K "typechecking result of hoare_thm")
+          (Sign.cert_prop (Proof_Context.theory_of ctxt)) term
   in term end
 
 fun invariant_implication ctxt a b = let
   val term = Logic.invariant_implication ctxt a b
-  val checked_term = catch_internal_error pretty_logic "typechecking result of invariant_implication" (Sign.cert_term (Proof_Context.theory_of ctxt)) term
+  val checked_term = catch_internal_error (K pretty_logic) (K "typechecking result of invariant_implication")
+                     (Sign.cert_term (Proof_Context.theory_of ctxt)) term
   val _ = if fastype_of checked_term <> HOLogic.boolT
           then error "typechecking result of invariant_implication: not of type bool" else ()
   in term end
@@ -111,9 +114,8 @@ fun invariant_typ options = Logic.invariant_typ (options_ex options)
 
 (* fun program_morphism m prog = ex_program (Logic.program_morphism m (program_ex prog)) *)
 
-local
-fun mk_logic name : logic = {
-    name = name,
+val logic : logic = {
+    serial = serial(),
     (* serial = serial(), *)
     (* binding = Logic.binding, *)
     program_term_typ = program_term_typ,
@@ -139,14 +141,9 @@ fun mk_logic name : logic = {
     invariant_consequences = Logic.invariant_consequences
   }
 
-in
-val logic = Context.>>> (fn context => Context.map_theory_result (fn thy => let
-  val table = Logic_Data.get thy
-  val (logic,table) = name_space_define_with_name context dummy_logic Logic.binding mk_logic table
-  val thy = Logic_Data.put table thy
-  in (logic,thy) end) context)
+val _ = Context.>> (fn context => Context.map_theory (Logic_Data.map (LogicTable.define
+  context (Logic.binding, logic))) context)
 
 val _ = Logic.this_logic_reference := SOME logic
-end
 
 end

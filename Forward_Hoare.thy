@@ -53,6 +53,7 @@ print_translation \<open>[(\<^const_syntax>\<open>SOLVE_WITH\<close>, fn ctxt =>
 lemma remove_SOLVE_WITH: "PROP P \<Longrightarrow> PROP SOLVE_WITH s PROP P"
   unfolding SOLVE_WITH_def by auto
 
+ML_file "name_table_serial.ML"
 ML_file "forward_hoare.ML"
 ML_file "forward_hoare_utils.ML"
 ML_file "hoare_logic.ML"
