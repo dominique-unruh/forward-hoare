@@ -123,7 +123,7 @@ type logic = {
   invariant_implication_syntax: Proof.context -> term -> term -> term,
   invariant_parse_translation: Proof.context -> term -> term -> term,
   default_options: ex_options,
-  set_option: string -> string -> Proof.context -> morphism -> ex_options -> ex_options,
+  set_option: string -> Input.source -> Proof.context -> morphism -> ex_options -> ex_options,
   subgoal_tactics: (Proof.context -> int -> tactic) Symtab.table,
   invariant_consequences: thm -> Proof.context -> thm list
 }
@@ -480,7 +480,7 @@ fun set_current_logic_command (toolkit:'a toolkit) (logic:logic) st = let
             (#context toolkit st |> Context.proof_of) (#serial logic))
   in #declaration toolkit (K (set_current_logic logic)) st end
 
-fun define_program_command (toolkit:'a toolkit) (logic:string) binding content (st:'a) : 'a = let
+fun define_program_command (toolkit:'a toolkit) (logic:string*Position.T) binding content (st:'a) : 'a = let
 val _ = print_with_markup content
   val context = #context toolkit st
   val ctxt = Context.proof_of context
@@ -498,18 +498,18 @@ val _ = print_with_markup content
     val context = map_programs (ProgTable.define context
       (Morphism.binding m binding, program_morph m prog)) context 
     val name = get_program_name_by_id context (#serial prog)
-    val context = set_option logic "@last_program" name m context
+    val context = set_option logic "@last_program" (Input.string name) m context
     in context end
   val st = #declaration toolkit add_program0decl st
 in st end
 
-fun set_option_command (toolkit:'a toolkit) (logic:string) name content (st:'a) : 'a = let
+fun set_option_command (toolkit:'a toolkit) (logic:string*Position.T) name content (st:'a) : 'a = let
   val context = #context toolkit st
   (* val ctxt = Context.proof_of context *)
   (* val thy = Context.theory_of context *)
   val logic = read_logic_name context logic
   val st = set_current_logic_command toolkit logic st
-  val st = #declaration toolkit (set_option logic name content) st
+  val st = #declaration toolkit (set_option logic name (Syntax.read_input content)) st
 in st end
 
 fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : 'a = let 
@@ -754,7 +754,7 @@ fun extend_hoare_auto (toolkit:'a toolkit) binding (previous:serial) after_qed0 
   val state = new_hoare_auto toolkit binding_step after_qed logic range precondition postcondition make_post make_post_args st
 in state end
 
-fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (range:Token.src) (pre:string option) (post:binding)
+fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:(string*Position.T) option) (range:Token.src) (pre:(string*Position.T) option) (post:binding)
    (make_post:string) (make_post_args:Token.src) (st:'a) : Proof.state = let
   val context = #context toolkit st
   val ctxt = Context.proof_of context
@@ -773,7 +773,7 @@ fun hoare_command (toolkit:'a toolkit) (name:binding) (extends:string option) (r
         in extend_hoare_auto toolkit name previous #1 range' post make_post make_post_args st end
   in state end
 
-fun preserve_command (toolkit:'a toolkit) invs (in_inv:string) (state:'a) = let
+fun preserve_command (toolkit:'a toolkit) invs (in_inv:string*Position.T) (state:'a) = let
   val ctxt = #context toolkit state |> Context.proof_of
   fun one (binding, thm_ref) state = let
     val thm_ref_str = string_of_fact_ref_attr ctxt thm_ref
@@ -806,7 +806,8 @@ fun mark_atoms tm =
 
 fun invariant_implication_tr ctxt [inv1_var,inv2] = let
     val inv1_name = case inv1_var of Free(n,_) => n | _ => error "_invariant_implication parse_translation 1"
-    val inv1 = read_invariant_name (Context.Proof ctxt) inv1_name
+    (* TODO: is there a way to get the position of the variable? *)
+    val inv1 = read_invariant_name (Context.Proof ctxt) (inv1_name,Position.none)
     val logic = #logic inv1
     val inv1_const = #const inv1 |> mark_atoms
     val inv2_tr = inv2 |> #invariant_parse_translation logic ctxt (#const inv1)
@@ -820,7 +821,7 @@ fun invariant_implication_tr ctxt [inv1_var,inv2] = let
 
 val binding_parser = Parse.binding --| Args.$$$ ":"
 
-val logic_parser = Parse.$$$ "(" |-- Parse.name --| Parse.$$$ ")"
+val logic_parser = Parse.$$$ "(" |-- Parse.name_position --| Parse.$$$ ")"
 fun declare_program_parser toolkit = (logic_parser -- binding_parser -- Parse.term)
   >> (fn ((logic,name),content) => define_program_command toolkit logic name content)
 
@@ -843,10 +844,10 @@ val _ = Outer_Syntax.local_theory \<^command_keyword>\<open>invariant'\<close> "
         (define_invariant_command lthy_toolkit logic name content))) *)
 
 val name_parser = Parse.binding --| Args.colon
-val extends_parser = Args.$$$ "extends" |-- Parse.name |> Scan.option
+val extends_parser = Args.$$$ "extends" |-- Parse.name_position |> Scan.option
 val range_parser = Args.$$$ "range" |-- tokens_parser
   (Token.keyword_with (fn x => x="pre" orelse x="post"))
-val pre_parser = Args.$$$ "pre" |-- Parse.name |> Scan.option
+val pre_parser = Args.$$$ "pre" |-- Parse.name_position |> Scan.option
 val make_post_parser = Parse.name -- tokens_parser (K false)
 val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- make_post_parser
 fun hoare_triple_parser toolkit = name_parser -- extends_parser -- range_parser -- pre_parser -- post_parser
@@ -870,7 +871,7 @@ in state end
 
 fun preserve_command_parser toolkit = 
   (Parse.and_list1 (Scan.optional name_parser Binding.empty -- Parse.thm)
-       -- (Parse.$$$ "in" |-- Parse.name))
+       -- (Parse.$$$ "in" |-- Parse.name_position))
   >> (fn (impls,in_inv) => preserve_command toolkit impls in_inv)
 
 (* TODO: add cuts and groups as needed *)

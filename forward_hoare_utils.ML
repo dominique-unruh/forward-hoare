@@ -35,7 +35,7 @@ fun set_last_program name (_:options) = {last_program = SOME name}
 (* Default implementation *)
 val default_options = {last_program = NONE}
 (* Default implementation *)
-fun set_option "@last_program" name _ _ = set_last_program name
+fun set_option "@last_program" name _ _ = set_last_program (Input.text_of name)
   | set_option name _ ctxt _ = error ("Unknown option " ^ name ^ " for logic " ^ 
       this_logic_pretty ctxt)
 

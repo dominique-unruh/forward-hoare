@@ -238,14 +238,14 @@ structure Logic1 = Hoare_Logic(
   fun set_right_program name ({util_options,memory_type,left_program,...}:options) : options = {memory_type = memory_type, util_options=util_options, right_program=SOME name, left_program=left_program}
   fun map_util_options f ({util_options, memory_type,left_program,right_program}:options) : options = {util_options = f util_options, memory_type = memory_type, left_program=left_program, right_program=right_program}
   fun set_option "memory" typ_str ctxt m = let
-        val T = Syntax.read_typ ctxt typ_str
+        val T = Syntax.read_typ ctxt (Syntax.implode_input typ_str)
         val T = Morphism.typ m T
         in set_memory_type T end
 (* TODO: check in left/right whether this is one of "our" programs *)
     | set_option "left" name ctxt _ = 
-        set_left_program (read_program_name_as_name (Context.Proof ctxt) name)
+        set_left_program (read_program_name_as_name (Context.Proof ctxt) (Input.source_content name))
     | set_option "right" name ctxt _ = 
-        set_right_program (read_program_name_as_name (Context.Proof ctxt) name)
+        set_right_program (read_program_name_as_name (Context.Proof ctxt) (Input.source_content name))
     | set_option name content ctxt m = map_util_options (Utils.set_option name content ctxt m)
 
   fun the_left_program options = options |> #left_program |> the' (fn _ => "No left program configured. Use 'hoare (tmp_logic) config left = name'")

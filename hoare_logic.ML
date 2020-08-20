@@ -28,7 +28,7 @@ val invariant_implication_lhs: term -> term
 val invariant_parse_translation: Proof.context -> term -> term -> term
 val default_options: options
 (* set_option name content ctxt m options *)
-val set_option: string -> string -> Proof.context -> morphism -> options -> options
+val set_option: string -> Input.source -> Proof.context -> morphism -> options -> options
 val subgoal_tactics: (string * (Proof.context -> int -> tactic)) list
 val invariant_consequences : thm -> Proof.context -> thm list
 end

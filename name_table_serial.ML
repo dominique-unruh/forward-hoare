@@ -15,7 +15,7 @@ end) : sig
   val get_name_by_id : table -> serial -> string
   val pretty_name : Proof.context -> table -> string -> string
   val pretty_name_from_id : Proof.context -> table -> serial -> string
-  val check : Context.generic -> table -> string -> string * serial * T
+  val check : Context.generic -> table -> (xstring*Position.T) -> string * serial * T
   val map_entry : serial -> (T -> T) -> table -> table
   val get_first: (T -> 'a option) -> table -> 'a option
 end = struct
@@ -45,11 +45,12 @@ fun get_name_by_id table id = get_both_by_id table id |> snd
 fun get_by_name table name = get_by_id table (Name_Space.get (#name_table table) name)
 fun pretty_name ctxt table name = Name_Space.pretty ctxt (#name_table table |> Name_Space.space_of_table) name |> Pretty.string_of
 fun pretty_name_from_id ctxt table id = pretty_name ctxt table (get_name_by_id table id)
-fun check context table str = let
-  val source : Input.source = Syntax.read_input str
-  val pos = Input.pos_of source
-  val xname = Input.text_of source
+fun check context table (xname,pos) = let
+  (* val source : Input.source = Syntax.read_input str *)
+  (* val pos = Input.pos_of source *)
+  (* val xname = Input.text_of source *)
   val (name,id) = Name_Space.check context (#name_table table) (xname,pos)
+  (* val _ = \<^print>(str,source,pos,xname,name,id) *)
   val entry = get_by_id table id
   in (name,id,entry) end
 fun map_entry id f {name_table, entry_table} =
