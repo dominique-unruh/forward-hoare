@@ -401,8 +401,8 @@ section \<open>Support for reasoning\<close>
 definition postcondition_default :: "'mem program \<Rightarrow> 'mem invariant \<Rightarrow> 'mem invariant" where
   "postcondition_default p I m \<longleftrightarrow> (\<exists>m'. I m' \<and> m \<in> set_spmf (semantics p m'))"
 
-definition postcondition_default2 :: "'mem1 program * 'mem2 program \<Rightarrow> ('mem1,'mem2) rinvariant \<Rightarrow> ('mem1,'mem2) rinvariant" where
-  "postcondition_default2 = (\<lambda>(p1,p2) I m1 m2.
+definition postcondition_default2 :: "'mem1 program \<Rightarrow> 'mem2 program \<Rightarrow> ('mem1,'mem2) rinvariant \<Rightarrow> ('mem1,'mem2) rinvariant" where
+  "postcondition_default2 = (\<lambda>p1 p2 I m1 m2.
       \<exists>m1' m2'. I m1' m2' \<and> m1 \<in> set_spmf (semantics p1 m1')
                           \<and> m2 \<in> set_spmf (semantics p2 m2'))"
 
@@ -473,19 +473,19 @@ lemma weight_semantics_Set_cons: "weight_spmf (semantics (Set x e # P) m) =
   by simp
 
 lemma postcondition_default2_valid:
-  assumes "\<lbrakk>SOLVER same_weight_tac?\<rbrakk> (\<And>m1 m2. A m1 m2 \<Longrightarrow> weight_spmf (semantics (fst p) m1) = weight_spmf (semantics (snd p) m2))"
-  shows "rhoare A (fst p) (snd p) (postcondition_default2 p A)"
+  assumes "\<lbrakk>SOLVER same_weight_tac?\<rbrakk> (\<And>m1 m2. A m1 m2 \<Longrightarrow> weight_spmf (semantics p m1) = weight_spmf (semantics q m2))"
+  shows "rhoare A p q (postcondition_default2 p q A)"
 proof -
   obtain \<mu> 
-    where \<mu>1: "map_spmf fst (\<mu> m1 m2) = semantics (fst p) m1"
-      and \<mu>2: "map_spmf snd (\<mu> m1 m2) = semantics (snd p) m2" 
+    where \<mu>1: "map_spmf fst (\<mu> m1 m2) = semantics p m1"
+      and \<mu>2: "map_spmf snd (\<mu> m1 m2) = semantics q m2" 
     if "A m1 m2" for m1 m2
     apply atomize_elim 
     using coupling_exists[OF assms[unfolded SOLVE_WITH_def, rule_format]]
     by (auto simp: all_conj_distrib[symmetric] intro!: choice)
 
-  have supp: "m1' \<in> set_spmf (semantics (fst p) m1)" 
-     "m2' \<in> set_spmf (semantics (snd p) m2)"
+  have supp: "m1' \<in> set_spmf (semantics p m1)" 
+     "m2' \<in> set_spmf (semantics q m2)"
     if "(m1', m2') \<in> set_spmf (\<mu> m1 m2)" and "A m1 m2" for m1' m2' m1 m2
     unfolding \<mu>1[OF \<open>A m1 m2\<close>, symmetric] \<mu>2[OF \<open>A m1 m2\<close>, symmetric]
     using that by force+
@@ -495,13 +495,13 @@ proof -
 qed
 
 lemma postcondition_rnd_valid:
-  assumes p_def: "p = ([Sample x1 e1], [Sample x2 e2])"
+  (* assumes p_def: "p = ([Sample x1 e1], [Sample x2 e2])" *)
   (* assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf fst (\<mu> m1 m2) = semantics (fst p) m1" *)
   (* assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf snd (\<mu> m1 m2) = semantics (snd p) m2" *)
   (* assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> set_spmf (\<mu> m1 m2) \<subseteq> j m1 m2" *)
   assumes fst: "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf fst (\<mu> m1 m2) = e1 m1"
   assumes snd: "\<And>m1 m2. A m1 m2 \<Longrightarrow> map_spmf snd (\<mu> m1 m2) = e2 m2"
-  shows "rhoare A (fst p) (snd p) (postcondition_rnd \<mu> x1 x2 A)"
+  shows "rhoare A [Sample x1 e1] [Sample x2 e2] (postcondition_rnd \<mu> x1 x2 A)"
 proof (unfold rhoare_def, rule, rule, rule)
   fix m1 m2 assume A: "A m1 m2"
   define \<mu>' where "\<mu>' = map_spmf (\<lambda>(v1, v2). (update_var x1 v1 m1, update_var x2 v2 m2)) (\<mu> m1 m2)"
@@ -511,15 +511,15 @@ proof (unfold rhoare_def, rule, rule, rule)
     apply (rule exI[of _ m1], rule exI[of _ m2])
     using \<open>A m1 m2\<close> by auto
 
-  moreover have "map_spmf fst \<mu>' = semantics (fst p) m1"
-    unfolding \<mu>'_def p_def 
+  moreover have "map_spmf fst \<mu>' = semantics [Sample x1 e1] m1"
+    unfolding \<mu>'_def 
     by (simp add: fst[OF A, symmetric] spmf.map_comp o_def case_prod_beta)
 
-  moreover have "map_spmf snd \<mu>' = semantics (snd p) m2"
-    unfolding \<mu>'_def p_def 
+  moreover have "map_spmf snd \<mu>' = semantics [Sample x2 e2] m2"
+    unfolding \<mu>'_def 
     by (simp add: snd[OF A, symmetric] spmf.map_comp o_def case_prod_beta)
 
-  ultimately show "rel_spmf (postcondition_rnd \<mu> x1 x2 A) (semantics (fst p) m1) (semantics (snd p) m2)"
+  ultimately show "rel_spmf (postcondition_rnd \<mu> x1 x2 A) (semantics [Sample x1 e1] m1) (semantics [Sample x2 e2] m2)"
     by (rule rel_spmfI[where pq=\<mu>'])
 qed
 
@@ -698,6 +698,13 @@ lemma hoare_seq:
   using assms unfolding hoare_def semantics_seq
   using spmf_pred_mono_strong by force
 
+lemma rhoare_seq:
+  assumes "rhoare A p p' B"
+  assumes "rhoare B q q' C"
+  shows "rhoare A (p@q) (p'@q') C"
+  using assms unfolding rhoare_def semantics_seq
+  using rel_spmf_bindI by blast
+
 lemma append_conv0: "[] @ z \<equiv> z"
   by simp
 
@@ -711,6 +718,16 @@ lemma join_hoare:
   shows "hoare invariant1 srt invariant3"
   using assms unfolding hoare_def by simp
 
+lemma join_rhoare:
+  assumes "rhoare invariant1 (p12@p23) (p12'@p23') invariant3"
+  assumes "p12 @ p23 \<equiv> p13"
+  assumes "p12' @ p23' \<equiv> p13'"
+  assumes "semantics p13 = semantics srt"
+  assumes "semantics p13' = semantics srt'"
+  shows "rhoare invariant1 srt srt' invariant3"
+  using assms unfolding rhoare_def by simp
+
+
 (* We use \<longrightarrow> and not \<Longrightarrow> in invariant implications because
    otherwise applying a rule to an invariant implication subgoal 
    leaves too much freedom to Isabelle and Isabelle is not forced to
@@ -719,9 +736,9 @@ lemma join_hoare:
 
 lemma wp_generic[hoare_wp add]:
   fixes x :: "('mem,'val) var"
-  assumes "invariant \<equiv> postcondition_default2 (p1,p2) A"
+  assumes "invariant \<equiv> postcondition_default2 p1 p2 A"
   assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> A' m1 m2"
-  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>m1 m2. postcondition_default2 (p1,p2) A' m1 m2 \<longrightarrow> B m1 m2"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>m1 m2. postcondition_default2 p1 p2 A' m1 m2 \<longrightarrow> B m1 m2"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
   using assms(2,3) unfolding assms(1) postcondition_default2_def 
   apply auto by metis
@@ -742,31 +759,31 @@ lemma wp_rnd[hoare_wp add]:
   apply auto by blast
 
 lemma wp_Set_cons1:
-  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2"
-  shows "\<forall>mem1 mem2. postcondition_default2 (Set x e # p1, p2) (\<lambda>m1 m2. M (update_var x (e m1) m1) m2) mem1 mem2 \<longrightarrow> B mem1 mem2"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 p1 p2 M mem1 mem2 \<longrightarrow> B mem1 mem2"
+  shows "\<forall>mem1 mem2. postcondition_default2 (Set x e # p1) p2 (\<lambda>m1 m2. M (update_var x (e m1) m1) m2) mem1 mem2 \<longrightarrow> B mem1 mem2"
   using assms unfolding postcondition_default2_def
   by auto
 
 lemma wp_Sample_cons1:
-  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2"
-  shows "\<forall>mem1 mem2. postcondition_default2 (Sample x e # p1, p2) 
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 p1 p2 M mem1 mem2 \<longrightarrow> B mem1 mem2"
+  shows "\<forall>mem1 mem2. postcondition_default2 (Sample x e # p1) p2
                (\<lambda>m1 m2. \<forall>a\<in>set_spmf (e m1). M (update_var x a m1) m2) mem1 mem2 \<longrightarrow> B mem1 mem2"
   using assms unfolding postcondition_default2_def apply auto by blast
 
 lemma wp_Set_cons2:
-  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2"
-  shows "\<forall>mem1 mem2. postcondition_default2 (p1, Set x e # p2) (\<lambda>m1 m2. M m1 (update_var x (e m2) m2)) mem1 mem2 \<longrightarrow> B mem1 mem2"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 p1 p2 M mem1 mem2 \<longrightarrow> B mem1 mem2"
+  shows "\<forall>mem1 mem2. postcondition_default2 p1 (Set x e # p2) (\<lambda>m1 m2. M m1 (update_var x (e m2) m2)) mem1 mem2 \<longrightarrow> B mem1 mem2"
   using assms unfolding postcondition_default2_def
   by auto
 
 lemma wp_Sample_cons2:
-  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 (p1, p2) M mem1 mem2 \<longrightarrow> B mem1 mem2"
-  shows "\<forall>mem1 mem2. postcondition_default2 (p1, Sample x e # p2) 
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 p1 p2 M mem1 mem2 \<longrightarrow> B mem1 mem2"
+  shows "\<forall>mem1 mem2. postcondition_default2 p1 (Sample x e # p2) 
                (\<lambda>m1 m2. \<forall>a\<in>set_spmf (e m2). M m1 (update_var x a m2)) mem1 mem2 \<longrightarrow> B mem1 mem2"
   using assms unfolding postcondition_default2_def apply auto by blast
 
 lemma wp_skip12:
-  shows "\<forall>mem1 mem2. postcondition_default2 ([], []) B mem1 mem2 \<longrightarrow> B mem1 mem2"
+  shows "\<forall>mem1 mem2. postcondition_default2 [] [] B mem1 mem2 \<longrightarrow> B mem1 mem2"
   unfolding postcondition_default2_def
   by auto
 
@@ -840,7 +857,7 @@ lemma untouched[hoare_untouched add]:
 
 lemma untouchedLR[hoare_untouched add]: 
   fixes x :: "('mem,'val) var"
-  assumes "invariant \<equiv> postcondition_default2 (P1,P2) A"
+  assumes "invariant \<equiv> postcondition_default2 P1 P2 A"
   assumes imp: "\<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
   assumes indepL: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentL_of_prog B P1"
   assumes indepR: "\<lbrakk>SOLVER independence_tac\<rbrakk> PROP independentR_of_prog B P2"

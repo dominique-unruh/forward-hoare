@@ -273,9 +273,9 @@ structure Logic1 = Hoare_Logic(
   in Const(\<^const_name>\<open>postcondition_default\<close>, progT --> invT --> invT) end
 
   fun postcondition_default2_const T T' = let
-    val progT = program2T T T'
+    (* val progT = program2T T T' *)
     val invT = invariant2T T T'
-  in Const(\<^const_name>\<open>postcondition_default2\<close>, progT --> invT --> invT) end
+  in Const(\<^const_name>\<open>postcondition_default2\<close>, programT T --> programT T' --> invT --> invT) end
 
   fun postcondition_default1 program_fragment pre = let
     val T = dest_invariantT "postcondition_default" (fastype_of pre)
@@ -287,7 +287,8 @@ structure Logic1 = Hoare_Logic(
 
   fun postcondition_default2 program_fragment pre = let
     val (T,T') = dest_invariant2T "postcondition_default2" (fastype_of pre)
-    val post = postcondition_default2_const T T' $ program_fragment $ pre
+    val (p1,p2) = HOLogic.dest_prod program_fragment
+    val post = postcondition_default2_const T T' $ p1 $ p2 $ pre
     fun tac ctxt = resolve_tac ctxt @{thms postcondition_default2_valid} 1
     in
       (post, tac)
@@ -315,7 +316,7 @@ structure Logic1 = Hoare_Logic(
     val (mem1T,x1T) = fastype_of x1 |> dest_varT "postcondition_rnd_parse"
     val (mem2T,x2T) = fastype_of x2 |> dest_varT "postcondition_rnd_parse"
     fun tac ctxt = resolve_tac ctxt @{thms postcondition_rnd_valid} 1
-              THEN resolve_tac ctxt @{thms refl} 1
+              (* THEN resolve_tac ctxt @{thms refl} 1 *)
     fun mk_postcondition coupling_str = let
       val couplingT = mem1T --> mem2T --> (HOLogic.mk_prodT (x1T,x2T) |> spmfT)
       val coupling = read_term_typed ctxt couplingT coupling_str
@@ -365,15 +366,18 @@ structure Logic1 = Hoare_Logic(
     val progT' = programT T'
   in Const(\<^const_name>\<open>rhoare\<close>, invT --> progT --> progT' --> invT --> HOLogic.boolT) end
 
-  fun hoare_thm _ pre prog post = 
+  fun hoare_thm ctxt pre prog post = 
     if not (is_prod (fastype_of prog)) then
       hoare_const (dest_invariantT "hoare_thm" (fastype_of pre)) $
           pre $ prog $ post |> HOLogic.mk_Trueprop
     else
-      let val (T1,T2) = dest_invariant2T "hoare_thm" (fastype_of pre)
-          val prog12T = HOLogic.mk_prodT (programT T1, programT T2)
-          val prog1 = Const(\<^const_name>\<open>fst\<close>, prog12T --> programT T1) $ prog
-          val prog2 = Const(\<^const_name>\<open>snd\<close>, prog12T --> programT T2) $ prog
+      let 
+(* val _ = \<^print>("hoare_thm",prog  |> Thm.cterm_of ctxt) *)
+          val (T1,T2) = dest_invariant2T "hoare_thm" (fastype_of pre)
+          (* val prog12T = HOLogic.mk_prodT (programT T1, programT T2) *)
+          (* val prog1 = Const(\<^const_name>\<open>fst\<close>, prog12T --> programT T1) $ prog *)
+          (* val prog2 = Const(\<^const_name>\<open>snd\<close>, prog12T --> programT T2) $ prog *)
+          val (prog1,prog2) = HOLogic.dest_prod prog
       in rhoare_const T1 T2 $ pre $ 
         prog1 $ prog2 $ post |> HOLogic.mk_Trueprop end
 
@@ -393,6 +397,37 @@ structure Logic1 = Hoare_Logic(
     (* val _ = sorted_thm |> \<^print> *)
     val thm = @{thm join_hoare} OF [hoare_append, p13_thm, sorted_thm]
   in (Range (prog12,range13),thm) end
+
+  | join_hoare ctxt _ (Range2 (prog12,range12,prog12',range12'))
+                    _ (Range2 (prog23,range23,prog23',range23')) _ thm12 thm23 = let
+    val _ = if prog12 <> prog23 then error ("Trying to join Hoare judgments from different left programs " ^ prog12 ^ " and " ^ prog23) else ()
+    val _ = if prog12' <> prog23' then error ("Trying to join Hoare judgments from different right left programs " ^ prog12 ^ " and " ^ prog23) else ()
+    val p12 = extract_range ctxt (Range (prog12,range12))
+    val p23 = extract_range ctxt (Range (prog12,range23))
+    val p12' = extract_range ctxt (Range (prog12',range12'))
+    val p23' = extract_range ctxt (Range (prog12',range23'))
+    (* rhoare invariant1 (p12@p23) (p12'@p23') invariant3 *)
+    val hoare_append = (@{thm rhoare_seq} OF [thm12, thm23])
+    val prog = get_my_program ctxt prog12
+    val prog' = get_my_program ctxt prog12'
+    val progT = fastype_of prog
+    val progT' = fastype_of prog'
+    val p12_p23 = Const(\<^const_name>\<open>append\<close>, progT --> progT --> progT) $ p12 $ p23
+    val p12_p23' = Const(\<^const_name>\<open>append\<close>, progT --> progT --> progT) $ p12' $ p23'
+    (* p12@p23 \<equiv> p13 *)
+    val p13_thm = append_conv (Thm.cterm_of ctxt p12_p23)
+    val p13 = Thm.rhs_of p13_thm |> Thm.term_of
+    (* p12'@p23' \<equiv> p13' *)
+    val p13_thm' = append_conv (Thm.cterm_of ctxt p12_p23')
+    val p13' = Thm.rhs_of p13_thm' |> Thm.term_of
+    val (range13,_,sorted_thm) = sort_program ctxt (range12@range23, p13)
+    val (range13',_,sorted_thm') = sort_program ctxt (range12'@range23', p13')
+    (* val _ = sorted_thm |> \<^print> *)
+    val thm = @{thm join_rhoare} OF [hoare_append, p13_thm, p13_thm', sorted_thm, sorted_thm']
+  in (Range2 (prog12,range13,prog12',range13'),thm) end
+
+  | join_hoare _ _ _ _ _ _ _ _ =
+    error "Joining relational and non-relational Hoare judgments not supported"
 
 
   fun invariant_implication _ inv1 inv2 = let

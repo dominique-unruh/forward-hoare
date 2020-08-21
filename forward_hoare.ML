@@ -226,7 +226,7 @@ type hoare = {
   (* binding: binding, *)
   range: ex_range,
   (* program: string, *)
-  program_fragment_const: term,
+  (* program_fragment_const: term, *)
   precondition: serial,
   postcondition: serial,
   valid: thm
@@ -245,9 +245,9 @@ structure ProgTable = Name_Table_Serial(
 )
 
 
-fun hoare_morphism m ({serial,logic,range,program_fragment_const,precondition,postcondition,valid}:hoare): hoare = 
+fun hoare_morphism m ({serial,logic,range,(* program_fragment_const, *)precondition,postcondition,valid}:hoare): hoare = 
   {serial=serial, logic=logic, range=range, 
-   program_fragment_const = Morphism.term m program_fragment_const,
+   (* program_fragment_const = Morphism.term m program_fragment_const, *)
    precondition=precondition, postcondition=postcondition,
    valid = Morphism.thm m valid}
 
@@ -360,9 +360,11 @@ fun invariant_morph m ({serial,logic,term,const,def_thm,known_implications}:inva
    const=Morphism.term m const, def_thm=Morphism.thm m def_thm, 
    known_implications=map (Morphism.thm m) known_implications}
 
-fun catch_internal_error logic func f x = f x
-   handle TYPE(msg, Ts, ts) => 
-   raise TYPE("Internal error " ^ func() ^ " (logic " ^ logic() ^ "): " ^ msg, Ts, ts)
+fun catch_internal_error logic what f x = f x
+   handle TYPE (msg, Ts, ts) => 
+   raise TYPE ("Internal error " ^ what() ^ " (logic " ^ logic() ^ "): " ^ msg, Ts, ts)
+   handle ERROR msg => 
+   raise ERROR ("Internal error " ^ what() ^ " (logic " ^ logic() ^ "): " ^ msg)
 
 
 fun add_known_implication (invariant:invariant) (implication:thm) context : Context.generic = let
@@ -434,18 +436,20 @@ fun join_hoare (toolkit:'a toolkit) binding (hoare1:serial) (hoare2:serial) (st:
   val b = hoare1' |> #postcondition |> get_invariant_by_id context |> #const
   val c = hoare2' |> #postcondition |> get_invariant_by_id context |> #const
   val logic = #logic hoare1'
-  val (range,joined_thm) = #join_hoare logic ctxt a (#range hoare1') b (#range hoare2') c
-          (#valid hoare1') (#valid hoare2')
-  val program_fragment = (#extract_range logic) ctxt range
-  val (program_fragment_const,_,st) = 
-      #define toolkit (Binding.suffix_name "_prog" binding) (Binding.suffix_name "_prog_def" binding) program_fragment st
+  val (range,joined_thm) = 
+          catch_internal_error (fn _ => pretty_logic_name ctxt (#serial logic)) (fn _ => "invoking join_hoare") 
+          (#join_hoare logic ctxt a (#range hoare1') b (#range hoare2') c
+           (#valid hoare1')) (#valid hoare2')
+  (* val program_fragment = (#extract_range logic) ctxt range *)
+(*   val (program_fragment_const,_,st) = 
+      #define toolkit (Binding.suffix_name "_prog" binding) (Binding.suffix_name "_prog_def" binding) program_fragment st *)
 
   val st = #note toolkit (Binding.suffix_name "_valid" binding) joined_thm st
 
   val info : hoare = {serial=serial(), range=range,
     precondition= #precondition hoare1',
     postcondition= #postcondition hoare2',
-    program_fragment_const=program_fragment_const,
+    (* program_fragment_const=program_fragment_const, *)
     logic = logic,
     (* program=program, *)
     valid = joined_thm
@@ -697,14 +701,14 @@ fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (preco
   val program_fragment = (#extract_range logic) ctxt range
   val _ = tracing ("Range: " ^ (Pretty.string_of (#pretty_range logic ctxt range)))
   val _ = tracing ("Program fragment: " ^ Syntax.string_of_term ctxt program_fragment)
-  val (program_fragment_const,_,st) = 
-      #define toolkit (bind "_prog") (bind "_prog_def") program_fragment st
+(*   val (program_fragment_const,_,st) = 
+      #define toolkit (bind "_prog") (bind "_prog_def") program_fragment st *)
   val valid_prop = #hoare_thm logic ctxt (#const precondition) program_fragment (#const postcondition)
   fun after_qed valid st = let
       val info : hoare = {serial=serial(), range=range,
         precondition = #serial precondition,
         postcondition = #serial postcondition,
-        program_fragment_const=program_fragment_const,
+        (* program_fragment_const=program_fragment_const, *)
         logic = logic,
         (* program=program |> #binding |> Binding.name_of, *)
         valid=valid}
@@ -716,6 +720,17 @@ fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (preco
   val state = #theorem toolkit after_qed valid_prop st
 
 in state end
+
+fun ensure_result default_msg seq =
+  let
+    fun result opt_msg xq =
+      (case (opt_msg, Seq.pull xq) of
+        (_, SOME (Seq.Result x, xq)) => Seq.cons x (Seq.filter_results xq)
+      | (SOME _, SOME (Seq.Error _, xq')) => result opt_msg xq'
+      | (NONE, SOME (Seq.Error msg, xq')) => result (SOME msg) xq'
+      | (SOME msg, NONE) => error (default_msg() ^ ": " ^ msg ())
+      | (NONE, NONE) => error (default_msg()))
+  in result NONE seq end
 
 
 fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (precondition:serial) 
@@ -731,13 +746,15 @@ fun new_hoare_auto (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (
             (Sign.cert_term (Proof_Context.theory_of ctxt)) post
   val (post,st) = add_invariant toolkit logic postcondition post st
   val state = new_hoare toolkit binding after_qed0 logic range precondition (#serial post) st
-  val (state,_) = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
-    |> Seq.first_result "could not unfold definition of postcondition (internal error)"
-  fun tac' ctxt = tac ctxt THEN ALLGOALS (auto_subgoal_tac false logic ctxt)
-  val (state,_) = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (tac' ctxt)), Position.no_range) state
-    |> Seq.first_result "could not solve proof obligation"
+  val state = Proof.apply (Method.Basic (Method.unfold [#def_thm post]), Position.no_range) state
+    |> ensure_result (K "could not unfold definition of postcondition (internal error)")
+  (* fun tac' ctxt = tac ctxt THEN ALLGOALS (auto_subgoal_tac false logic ctxt) *)
+  val state = Seq.maps (Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (tac ctxt)), Position.no_range)) state
+    |> ensure_result (fn _ => "Could not apply tactic associated with postcondition " ^ make_post)
+  val state = Seq.maps (Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (ALLGOALS (auto_subgoal_tac false logic ctxt))), Position.no_range)) state
+    |> ensure_result (fn _ => "Could not solve subgoals of tactic associated with postcondition " ^ make_post)
 
-  in state end
+  in Seq.hd state end
 
 
 fun extend_hoare_auto (toolkit:'a toolkit) binding (previous:serial) after_qed0 range (postcondition:binding)

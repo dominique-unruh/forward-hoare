@@ -127,24 +127,24 @@ lemma True proof
     apply wp
     using start2_inv_def by auto
 
-  hoare step1LR: range \<emptyset> ~ 1 pre step1L post step1LR = default
+  hoare step1LR: extends step1L range \<emptyset> ~ 1 post step1LR = default
 
   have bla [hoare_invi]: "{step1LR \<Rightarrow> $x1=$x2}"
     apply wp
-    using \<open>{step1L \<Rightarrow> $x1=$x2+2}\<close> 
+    using \<open>{step1L \<Rightarrow> $x1=$x2+2}\<close>
     by auto
 
-  hoare step2: range 2~2 pre step1LR post step2 = default
+  hoare step2: extends step1LR range 2~2 post step2 = default
 
   have [hoare_invi]: "{step2 \<Rightarrow> $z1=$z2}"
     apply wp
     using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close>
     by simp
 
-  hoare' step3test: range 3~3 pre step2 post step3test = default
+  hoare' step3test: extends step2 range 3~3 post step3test = default
     by auto
 
-  hoare' step3: range 3~3 pre step2 post step3 = 
+  hoare' step3: extends step2 range 3~3 post step3 = 
         rnd \<open>\<lambda>m1 m2. map_spmf (\<lambda>x. (x,x+1)) (spmf_of_set {1,2})\<close>
     by auto
 
