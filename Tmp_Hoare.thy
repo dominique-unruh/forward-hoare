@@ -949,6 +949,7 @@ lemma split_invariant_implication_imp2:
 subsection \<open>Concrete syntax for programs\<close>
 
 syntax "_expression_tmp_hoare" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
+syntax "_expression2_tmp_hoare" :: "'a \<Rightarrow> 'a" ("EXPR2[_]")
 syntax "_invariant_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV[_]")
 syntax "_invariant2_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV2[_]")
 hide_type (open) id
@@ -962,6 +963,7 @@ fun EXPR2_like T ctxt [e] = Tmp_Hoare.tr_EXPR2_like T ctxt e
 in
 [
   (\<^syntax_const>\<open>_expression_tmp_hoare\<close>, EXPR_like dummyT),
+  (\<^syntax_const>\<open>_expression2_tmp_hoare\<close>, EXPR2_like dummyT),
   (\<^syntax_const>\<open>_invariant_tmp_hoare\<close>, EXPR_like HOLogic.boolT),
   (\<^syntax_const>\<open>_invariant2_tmp_hoare\<close>, EXPR2_like HOLogic.boolT)
 ] end\<close>
@@ -972,7 +974,6 @@ nonterminal instruction_syntax_tmp_hoare
 syntax "_instruction_set_tmp_hoare" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_tmp_hoare" ("_ := _")
 syntax "_instruction_sample_tmp_hoare" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_tmp_hoare" ("_ <$ _")
 syntax "_instruction_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> 'a" ("INSTR[_]")
-(* syntax "_string_of_identifier" :: "id \<Rightarrow> 'a" *)
 
 translations "_instruction_tmp_hoare (_instruction_set_tmp_hoare x e)" 
           \<rightharpoonup> "CONST Set x (_expression_tmp_hoare e)"

@@ -108,7 +108,7 @@ lemma [simp]:
 Hoare config (tmp_hoare) memory = memory
 
 Hoare program (tmp_hoare) left:  \<open>PROG[x:=$x+1; z:=nat ($x); y <$ spmf_of_set {1,2}]\<close>
-Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat ($x); y <$ spmf_of_set {2,3}]\<close>
+Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat ($x); y <$ spmf_of_set {2+$z,3+$z}]\<close>
 
 Hoare config (tmp_hoare) left = left
 Hoare config (tmp_hoare) right = right
@@ -145,10 +145,10 @@ lemma True proof
     by auto
 
   hoare' step3: extends step2 range 3~3 post step3 = 
-        rnd \<open>\<lambda>m1 m2. map_spmf (\<lambda>x. (x,x+1)) (spmf_of_set {1,2})\<close>
+        rnd \<open>EXPR2[map_spmf (\<lambda>x. (x,x+1+$z2)) (spmf_of_set {1,2})]\<close>
     by auto
 
-  have \<open>{step3 \<Rightarrow> $y1+1=$y2}\<close>
+  have \<open>{step3 \<Rightarrow> $y1+1+$z2=$y2}\<close>
     apply wp by simp
 
   from \<open>{step3 \<Rightarrow> $x1=$x2}\<close> \<open>{step3 \<Rightarrow> $z1=$z2}\<close>
