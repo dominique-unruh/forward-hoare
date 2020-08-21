@@ -1,4 +1,4 @@
-structure Tmp_Hoare =
+structure PRHL =
 struct
 
 (* TODO
@@ -136,9 +136,9 @@ fun make_syntax_type (Type(name, Ts)) = Term.list_comb
   | make_syntax_type T = raise TYPE("make_syntax_type: type variables not supported", [T], [])
 
 fun tr_EXPR_like T _ e =   let
-  fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) =
+  fun replace i (Const(\<^syntax_const>\<open>_variable_prhl\<close>,_) $ Free(n,_)) =
         @{const eval_var(dummy,dummy)} $ Free(n, dummyT) $ Bound i
-    | replace _ (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
+    | replace _ (Const(\<^syntax_const>\<open>_variable_prhl\<close>,_) $ _) = error "$ must precede an identifier"
     | replace i (t1$t2) = replace i t1 $ replace i t2
     | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
     | replace _ t = t
@@ -149,7 +149,7 @@ fun tr_EXPR_like T _ e =   let
   end
 
 fun tr_EXPR2_like T _ e =   let
-  fun replace i (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ Free(n,_)) = let
+  fun replace i (Const(\<^syntax_const>\<open>_variable_prhl\<close>,_) $ Free(n,_)) = let
         val len = String.size n
         val last = String.sub (n, len-1)
         val name = String.substring (n, 0, len-1)
@@ -157,7 +157,7 @@ fun tr_EXPR2_like T _ e =   let
         val lr = case last of #"1" => 1 | #"2" => 0 |
                     _ => error ("Variable must be indexed. ($"^n^"1 or $"^n^"2 instead of $"^n^")")
       in @{const eval_var(dummy,dummy)} $ Free(name, dummyT) $ Bound (i+lr) end
-    | replace _ (Const(\<^syntax_const>\<open>_variable_tmp_hoare\<close>,_) $ _) = error "$ must precede an identifier"
+    | replace _ (Const(\<^syntax_const>\<open>_variable_prhl\<close>,_) $ _) = error "$ must precede an identifier"
     | replace i (t1$t2) = replace i t1 $ replace i t2
     | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
     | replace _ t = t
@@ -223,7 +223,7 @@ fun split_invariant_implications _ impl = let
 
 
 structure Logic1 = Hoare_Logic(
-  val binding = \<^binding>\<open>tmp_hoare\<close>
+  val binding = \<^binding>\<open>prhl\<close>
   structure Utils = Forward_Hoare_Utils()
   open Utils
 
@@ -366,7 +366,7 @@ structure Logic1 = Hoare_Logic(
     val progT' = programT T'
   in Const(\<^const_name>\<open>rhoare\<close>, invT --> progT --> progT' --> invT --> HOLogic.boolT) end
 
-  fun hoare_thm ctxt pre prog post = 
+  fun hoare_thm _ pre prog post = 
     if not (is_prod (fastype_of prog)) then
       hoare_const (dest_invariantT "hoare_thm" (fastype_of pre)) $
           pre $ prog $ post |> HOLogic.mk_Trueprop
@@ -413,7 +413,7 @@ structure Logic1 = Hoare_Logic(
     val progT = fastype_of prog
     val progT' = fastype_of prog'
     val p12_p23 = Const(\<^const_name>\<open>append\<close>, progT --> progT --> progT) $ p12 $ p23
-    val p12_p23' = Const(\<^const_name>\<open>append\<close>, progT --> progT --> progT) $ p12' $ p23'
+    val p12_p23' = Const(\<^const_name>\<open>append\<close>, progT' --> progT' --> progT') $ p12' $ p23'
     (* p12@p23 \<equiv> p13 *)
     val p13_thm = append_conv (Thm.cterm_of ctxt p12_p23)
     val p13 = Thm.rhs_of p13_thm |> Thm.term_of

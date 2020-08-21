@@ -1,7 +1,5 @@
-theory Tmp_Hoare
-  imports Main 
-  CryptHOL.CryptHOL
-  Forward_Hoare
+theory PRHL
+  imports CryptHOL.CryptHOL Forward_Hoare
 begin
 
 no_notation m_inv ("inv\<index> _" [81] 80)
@@ -948,59 +946,59 @@ lemma split_invariant_implication_imp2:
 
 subsection \<open>Concrete syntax for programs\<close>
 
-syntax "_expression_tmp_hoare" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
-syntax "_expression2_tmp_hoare" :: "'a \<Rightarrow> 'a" ("EXPR2[_]")
-syntax "_invariant_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV[_]")
-syntax "_invariant2_tmp_hoare" :: "'a \<Rightarrow> 'a" ("INV2[_]")
+syntax "_expression_prhl" :: "'a \<Rightarrow> 'a" ("EXPR[_]")
+syntax "_expression2_prhl" :: "'a \<Rightarrow> 'a" ("EXPR2[_]")
+syntax "_invariant_prhl" :: "'a \<Rightarrow> 'a" ("INV[_]")
+syntax "_invariant2_prhl" :: "'a \<Rightarrow> 'a" ("INV2[_]")
 hide_type (open) id
-syntax "_variable_tmp_hoare" :: "id \<Rightarrow> 'a" ("$_" 1000)
+syntax "_variable_prhl" :: "id \<Rightarrow> 'a" ("$_" 1000)
 
-ML_file \<open>tmp_hoare.ML\<close>
+ML_file \<open>prhl.ML\<close>
 
 parse_translation \<open>let 
-fun EXPR_like T ctxt [e] = Tmp_Hoare.tr_EXPR_like T ctxt e
-fun EXPR2_like T ctxt [e] = Tmp_Hoare.tr_EXPR2_like T ctxt e
+fun EXPR_like T ctxt [e] = PRHL.tr_EXPR_like T ctxt e
+fun EXPR2_like T ctxt [e] = PRHL.tr_EXPR2_like T ctxt e
 in
 [
-  (\<^syntax_const>\<open>_expression_tmp_hoare\<close>, EXPR_like dummyT),
-  (\<^syntax_const>\<open>_expression2_tmp_hoare\<close>, EXPR2_like dummyT),
-  (\<^syntax_const>\<open>_invariant_tmp_hoare\<close>, EXPR_like HOLogic.boolT),
-  (\<^syntax_const>\<open>_invariant2_tmp_hoare\<close>, EXPR2_like HOLogic.boolT)
+  (\<^syntax_const>\<open>_expression_prhl\<close>, EXPR_like dummyT),
+  (\<^syntax_const>\<open>_expression2_prhl\<close>, EXPR2_like dummyT),
+  (\<^syntax_const>\<open>_invariant_prhl\<close>, EXPR_like HOLogic.boolT),
+  (\<^syntax_const>\<open>_invariant2_prhl\<close>, EXPR2_like HOLogic.boolT)
 ] end\<close>
 
 (* term "(INV2[$x1 = $x2], INV[$x = (1::nat)])" *)
 
-nonterminal instruction_syntax_tmp_hoare
-syntax "_instruction_set_tmp_hoare" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_tmp_hoare" ("_ := _")
-syntax "_instruction_sample_tmp_hoare" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_tmp_hoare" ("_ <$ _")
-syntax "_instruction_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> 'a" ("INSTR[_]")
+nonterminal instruction_syntax_prhl
+syntax "_instruction_set_prhl" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_prhl" ("_ := _")
+syntax "_instruction_sample_prhl" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_prhl" ("_ <$ _")
+syntax "_instruction_prhl" :: "instruction_syntax_prhl \<Rightarrow> 'a" ("INSTR[_]")
 
-translations "_instruction_tmp_hoare (_instruction_set_tmp_hoare x e)" 
-          \<rightharpoonup> "CONST Set x (_expression_tmp_hoare e)"
-translations "_instruction_tmp_hoare (_instruction_sample_tmp_hoare x e)" 
-          \<rightharpoonup> "CONST Sample x (_expression_tmp_hoare e)"
+translations "_instruction_prhl (_instruction_set_prhl x e)" 
+          \<rightharpoonup> "CONST Set x (_expression_prhl e)"
+translations "_instruction_prhl (_instruction_sample_prhl x e)" 
+          \<rightharpoonup> "CONST Sample x (_expression_prhl e)"
 
 print_translation \<open>[
 (\<^const_syntax>\<open>Set\<close>, fn ctxt => fn [x,n] =>
-  Const(\<^syntax_const>\<open>_instruction_tmp_hoare\<close>,dummyT) $
-    (Const(\<^syntax_const>\<open>_instruction_set_tmp_hoare\<close>,dummyT) $ x $ n)
+  Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_set_prhl\<close>,dummyT) $ x $ n)
   handle TERM("dest_literal_syntax",_) => raise Match),
 
 (\<^const_syntax>\<open>Sample\<close>, fn ctxt => fn [x,n] =>
-  Const(\<^syntax_const>\<open>_instruction_tmp_hoare\<close>,dummyT) $
-    (Const(\<^syntax_const>\<open>_instruction_sample_tmp_hoare\<close>,dummyT) $ x $ n)
+  Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_sample_prhl\<close>,dummyT) $ x $ n)
   handle TERM("dest_literal_syntax",_) => raise Match)
 ]\<close>
 
 term \<open>INSTR[x <$ return_spmf ($x+$y)]\<close>
 
-nonterminal "program_syntax_tmp_hoare"
-syntax "_program_cons_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> program_syntax_tmp_hoare \<Rightarrow> program_syntax_tmp_hoare" ("_; _")
-syntax "_program_single_tmp_hoare" :: "instruction_syntax_tmp_hoare \<Rightarrow> program_syntax_tmp_hoare" ("_")
-syntax "_program_tmp_hoare" :: "program_syntax_tmp_hoare \<Rightarrow> 'a" ("PROG[_]")
+nonterminal "program_syntax_prhl"
+syntax "_program_cons_prhl" :: "instruction_syntax_prhl \<Rightarrow> program_syntax_prhl \<Rightarrow> program_syntax_prhl" ("_; _")
+syntax "_program_single_prhl" :: "instruction_syntax_prhl \<Rightarrow> program_syntax_prhl" ("_")
+syntax "_program_prhl" :: "program_syntax_prhl \<Rightarrow> 'a" ("PROG[_]")
 
-translations "_program_tmp_hoare (_program_cons_tmp_hoare i is)" \<rightleftharpoons> "_instruction_tmp_hoare i # _program_tmp_hoare is"
-translations "_program_tmp_hoare (_program_single_tmp_hoare i)" \<rightleftharpoons> "[_instruction_tmp_hoare i]"
+translations "_program_prhl (_program_cons_prhl i is)" \<rightleftharpoons> "_instruction_prhl i # _program_prhl is"
+translations "_program_prhl (_program_single_prhl i)" \<rightleftharpoons> "[_instruction_prhl i]"
 
 term \<open>PROG[x := 0; x := $x+1]\<close>
 

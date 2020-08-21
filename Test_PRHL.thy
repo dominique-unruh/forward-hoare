@@ -1,5 +1,5 @@
-theory Test_Tmp_Hoare
-  imports Tmp_Hoare
+theory Test_PRHL
+  imports PRHL
 begin
 
 record memory = mem_x :: int   mem_y :: "real"   mem_z :: nat
@@ -105,17 +105,17 @@ lemma [simp]:
   "independent_of mem_y z" "independent_of mem_z y"
   unfolding independent_of_def by simp_all
 
-Hoare config (tmp_hoare) memory = memory
+Hoare config (prhl) memory = memory
 
-Hoare program (tmp_hoare) left:  \<open>PROG[x:=$x+1; z:=nat ($x); y <$ spmf_of_set {1,2}]\<close>
-Hoare program (tmp_hoare) right: \<open>PROG[x:=$x+2; z:=nat ($x); y <$ spmf_of_set {2+$z,3+$z}]\<close>
+Hoare program (prhl) left:  \<open>PROG[x:=$x+1; z:=nat ($x); y <$ spmf_of_set {1,2}]\<close>
+Hoare program (prhl) right: \<open>PROG[x:=$x+2; z:=nat ($x); y <$ spmf_of_set {2+$z,3+$z}]\<close>
 
-Hoare config (tmp_hoare) left = left
-Hoare config (tmp_hoare) right = right
+Hoare config (prhl) left = left
+Hoare config (prhl) right = right
 
 lemma True proof
 
-  hoare invariant (tmp_hoare) 
+  hoare invariant (prhl) 
     start2: "INV2[$x1=$x2+1 \<and> $z1=$z2] :: (memory, memory) rinvariant"
 
   thm \<open>{start2 \<Rightarrow> $x1=$x2+1}\<close>
