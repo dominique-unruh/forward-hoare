@@ -694,7 +694,7 @@ fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (preco
   (* val program = get_the_program context program *)
   val precondition = get_invariant_by_id context precondition
   val postcondition = get_invariant_by_id context postcondition
-  fun bind suffix = Binding.suffix_name suffix binding
+  (* fun bind suffix = Binding.suffix_name suffix binding *)
   (* val logic = get_the_logic (Context.theory_of context) (#logic program) *)
 (*   val _ = if #valid_range logic range then ()
           else error ("Invalid range " ^ Pretty.string_of (#pretty_range logic ctxt range)) *)
@@ -822,9 +822,12 @@ fun mark_atoms tm =
   in mark tm end;
 
 fun invariant_implication_tr ctxt [inv1_var,inv2] = let
-    val inv1_name = case inv1_var of Free(n,_) => n | _ => error "_invariant_implication parse_translation 1"
-    (* TODO: is there a way to get the position of the variable? *)
-    val inv1 = read_invariant_name (Context.Proof ctxt) (inv1_name,Position.none)
+    val (inv1_name,constr) = case inv1_var of Const(\<^syntax_const>\<open>_constrain\<close>,_) $ Free(n,_) $ constr => (n,constr)
+                         | Free(n,_) => (n,@{const Pure.dummy_pattern(dummy)})
+                         | _ => raise TERM("_invariant_implication parse_translation 1", [inv1_var,inv2])
+    val pos = case Term_Position.decode_position constr of NONE => Position.none
+                  | SOME (p, _) => p
+    val inv1 = read_invariant_name (Context.Proof ctxt) (inv1_name,pos)
     val logic = #logic inv1
     val inv1_const = #const inv1 |> mark_atoms
     val inv2_tr = inv2 |> #invariant_parse_translation logic ctxt (#const inv1)

@@ -69,7 +69,7 @@ method_setup wp =
     >> (fn lenient => fn ctxt => SIMPLE_METHOD' (Forward_Hoare.invariant_wp_tac ctxt lenient))\<close>
   "Weakest precondition"
 
-syntax "_invariant_implication" :: "id \<Rightarrow> 'a \<Rightarrow> bool" ("{_ \<Rightarrow> _}")
+syntax "_invariant_implication" :: "id_position \<Rightarrow> 'a \<Rightarrow> bool" ("{_ \<Rightarrow> _}")
 parse_translation \<open>[
   (\<^syntax_const>\<open>_invariant_implication\<close>, Forward_Hoare.invariant_implication_tr)]\<close>
 
