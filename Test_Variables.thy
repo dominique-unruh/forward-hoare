@@ -4,30 +4,13 @@ begin
 
 record memory = mem_x :: int   mem_y :: "int"   mem_z :: nat
 
-(* TODO: Should be possible to declare many variables in one go,
-    together with independence theorems *)
-declare_variable 
+declare_variables 
   x get "mem_x :: memory \<Rightarrow> _" set "\<lambda>a m. m\<lparr>mem_x := a\<rparr>" and
   y get "mem_y" set "\<lambda>a m. m\<lparr>mem_y := a\<rparr>" and
   z get "mem_z" set "\<lambda>a m. m\<lparr>mem_z := a\<rparr>"
   by auto
 
 print_theorems
-
-lemma [simp, independence]:
-  "independent_vars x y" "independent_vars y x"
-  "independent_vars x z" "independent_vars z x"
-  "independent_vars y z" "independent_vars z y"
-  unfolding independent_vars_def by simp_all
-
-(* Those follow using Variables.independent_of_var *)
-lemma [simp]:
-  "independent_of mem_x y" "independent_of mem_y x"
-  "independent_of mem_x z" "independent_of mem_z x"
-  "independent_of mem_y z" "independent_of mem_z y"
-  unfolding independent_of_def by simp_all
-
-
 
 (* Test *)
 

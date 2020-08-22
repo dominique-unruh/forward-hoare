@@ -1,6 +1,6 @@
 theory Variables
   imports Main "HOL-Library.Cardinality" Utils
-  keywords "declare_variable" :: thy_goal and "get" and "set"
+  keywords "declare_variables" :: thy_goal and "get" and "set"
 begin
 
 definition "less_eq_card A B \<longleftrightarrow> (\<exists>f. inj_on f A \<and> range f \<subseteq> B)"
@@ -312,28 +312,13 @@ lemma eval_update_var[simp]:
   using assms apply transfer unfolding valid_raw_var_def by auto
 
 
-lemma declare_variable_command_helper_valid:
-  assumes "x \<equiv> Abs_var (g,s)"
-  assumes "valid_raw_var (UNIV,g,s)"
-  shows "valid_var x"
-  by (simp add: Abs_var_inverse assms valid_var.rep_eq)
-
-lemma declare_variable_command_helper_eval:
-  assumes "x \<equiv> Abs_var (g,s)"
-  assumes "valid_raw_var (UNIV,g,s)"
-  shows "eval_var x m = g m"
-  by (simp add: Abs_var_inverse assms eval_var.rep_eq)
-
-lemma declare_variable_command_helper_update:
-  assumes "x \<equiv> Abs_var (g,s)"
-  assumes "valid_raw_var (UNIV,g,s)"
-  shows "update_var x a m = s a m"
-  by (simp add: Abs_var_inverse assms update_var.rep_eq)
 
 definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
 
 definition "independent_vars a b \<longleftrightarrow> (\<forall>x y mem.
    update_var b y (update_var a x mem) = update_var a x (update_var b y mem))"
+
+
 
 named_theorems independence
 
@@ -399,6 +384,73 @@ next
   show "eval_var x m = eval_var x (update_var y a m)"
     unfolding invalid_is_dummy_var[OF False] by simp
 qed
+
+
+lemma declare_variable_command_helper_valid:
+  assumes "x \<equiv> Abs_var (g,s)"
+  assumes "valid_raw_var (UNIV,g,s)"
+  shows "valid_var x"
+  by (simp add: Abs_var_inverse assms valid_var.rep_eq)
+
+lemma declare_variable_command_helper_eval:
+  assumes "x \<equiv> Abs_var (g,s)"
+  assumes "valid_raw_var (UNIV,g,s)"
+  shows "eval_var x m = g m"
+  by (simp add: Abs_var_inverse assms eval_var.rep_eq)
+
+lemma declare_variable_command_helper_update:
+  assumes "x \<equiv> Abs_var (g,s)"
+  assumes "valid_raw_var (UNIV,g,s)"
+  shows "update_var x a m = s a m"
+  by (simp add: Abs_var_inverse assms update_var.rep_eq)
+
+
+lemma declare_variable_command_helper_indep:
+  assumes "x \<equiv> Abs_var (gx,sx)"
+  assumes "y \<equiv> Abs_var (gy,sy)"
+  assumes "valid_raw_var (UNIV,gx,sx)"
+  assumes "valid_raw_var (UNIV,gy,sy)"
+  assumes "\<And>a b m. sx a (sy b m) = sy b (sx a m)"
+  shows "independent_vars x y"
+  unfolding independent_vars_def update_var.rep_eq assms(1,2)
+  using assms(3-5) by (simp add: Abs_var_inverse)
+  
+lemma declare_variable_command_helper_indep_flip:
+  assumes "x \<equiv> Abs_var (gx,sx)"
+  assumes "y \<equiv> Abs_var (gy,sy)"
+  assumes "valid_raw_var (UNIV,gx,sx)"
+  assumes "valid_raw_var (UNIV,gy,sy)"
+  assumes "\<And>a b m. sx a (sy b m) = sy b (sx a m)"
+  shows "independent_vars y x"
+  unfolding independent_vars_def update_var.rep_eq assms(1,2)
+  using assms(3-5) by (simp add: Abs_var_inverse)
+
+lemma declare_variable_command_helper_indep':
+  assumes "x \<equiv> Abs_var (gx,sx)"
+  assumes y: "y \<equiv> Abs_var (gy,sy)"
+  assumes "valid_raw_var (UNIV,gx,sx)"
+  assumes "valid_raw_var (UNIV,gy,sy)"
+  assumes "\<And>a b m. sx a (sy b m) = sy b (sx a m)"
+  shows "independent_of gy x"
+proof -
+  have "independent_of (eval_var y) x"
+    apply (rule independent_of_var)
+    using assms by (rule declare_variable_command_helper_indep_flip)
+  then show ?thesis
+    unfolding y eval_var.rep_eq
+    apply (subst (asm) Abs_var_inverse)
+    using assms by auto
+qed
+
+lemma declare_variable_command_helper_indep'_flip:
+  assumes "x \<equiv> Abs_var (gx,sx)"
+  assumes "y \<equiv> Abs_var (gy,sy)"
+  assumes "valid_raw_var (UNIV,gx,sx)"
+  assumes "valid_raw_var (UNIV,gy,sy)"
+  assumes "\<And>a b m. sx a (sy b m) = sy b (sx a m)"
+  shows "independent_of gx y"
+  using assms(2,1,4,3) apply (rule declare_variable_command_helper_indep')
+  using assms(5) by simp
 
 ML_file "variables.ML"
 

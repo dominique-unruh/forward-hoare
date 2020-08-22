@@ -47,14 +47,33 @@ fun declare_variables (toolkit:'a toolkit) (decls:(binding*term*term) list) (st:
   (* Keys and valid_goals are ordered the same way *)
   val (keys,valid_goals) = Symtab.dest decls |> map (fn (name,decl) => (name,valid decl)) |> split_list
 
+  fun mk_pairs [] = []
+    | mk_pairs (k::ks) = (map (fn l => (k,l)) ks) @ mk_pairs ks
+  val pairs = mk_pairs keys |> \<^print>
+  fun independence_goal x y = let
+    val xdecl = Symtab.lookup decls x |> the' (fn _ => "declare_variables")
+    val ydecl = Symtab.lookup decls y |> the' (fn _ => "declare_variables")
+    fun mk_all v T body = Logic.all_const T $ Abs(v,T,body)
+    (* \<And>a b m. x_setter a (y_setter b m) = y_setter b (x_setter a m) *)
+    val t = HOLogic.mk_eq (#setter xdecl $ Bound 2 $ (#setter ydecl $ Bound 1 $ Bound 0),
+                           #setter ydecl $ Bound 1 $ (#setter xdecl $ Bound 2 $ Bound 0))
+            |> HOLogic.mk_Trueprop
+            |> mk_all "m" memT
+            |> mk_all "b" (#valT ydecl)
+            |> mk_all "a" (#valT xdecl)
+  in t end
+  val independence_goals = map (fn (x,y) => independence_goal x y) pairs
+
   (* Declaring derived theorems *)
-  fun after_qed valid_thms st : 'a = let
+  fun after_qed thms st : 'a = let
+    val (valid_thms,independence_thms) = chop (length valid_goals) thms
+
     (* Putting the proven theorems into the decls-map *)
     val _ = map2 (fn key => fn valid_thm => 
         #valid_thm (Symtab.lookup decls key |> the) := valid_thm) keys valid_thms
 
     (* Declare the derived theorems for one variable *)
-    fun process_decl (key,decl) st = let
+    fun process_decl (_,decl) st = let
       fun derive (name, rule) st = let
         val derived_thm = rule OF [!(#def_thm decl), !(#valid_thm decl)]
         val st = #note toolkit (Binding.qualify_name true (#binding decl) name) derived_thm st
@@ -67,12 +86,37 @@ fun declare_variables (toolkit:'a toolkit) (decls:(binding*term*term) list) (st:
            ("update", @{thm declare_variable_command_helper_update})] st
     in st end
     val st = Symtab.fold process_decl decls st
+
+    (* Create independence theorems *)
+    fun independence (x,y) thm st = let
+      fun derive (name, flip, rule) st = let
+        val xdecl = Symtab.lookup decls x |> the' (fn _ => "declare_variables")
+        val ydecl = Symtab.lookup decls y |> the' (fn _ => "declare_variables")
+        val derived_thm = rule OF [!(#def_thm xdecl), !(#def_thm ydecl)]
+        val derived_thm = derived_thm OF [!(#valid_thm xdecl), !(#valid_thm ydecl), thm]
+        val binding = if flip then Binding.qualify_name true (#binding ydecl) x
+                              else Binding.qualify_name true (#binding xdecl) y
+        val binding = Binding.qualify_name true binding name
+        val st = #note toolkit binding derived_thm st
+        val st = #declaration toolkit (fn m => Thm.apply_attribute Simplifier.simp_add 
+                        (Morphism.thm m derived_thm) #> snd) st
+      in st end
+      val st = fold derive
+          [("indep", false, @{thm declare_variable_command_helper_indep}),
+           ("indep", true, @{thm declare_variable_command_helper_indep_flip}),
+           ("indep'", false, @{thm declare_variable_command_helper_indep'}),
+           ("indep'", true, @{thm declare_variable_command_helper_indep'_flip})] st
+    in st end
+    val st = fold2 independence pairs independence_thms st
+
   in st end
 
   (* Proving validity: valid_raw_var (UNIV,getter,setter) for each var *)
-  val state = #theorems toolkit after_qed valid_goals st
-  fun valid_raw_tac ctxt = ALLGOALS (resolve_tac ctxt @{thms valid_raw_varI'})
-  val state = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (valid_raw_tac ctxt)), Position.no_range) state
+  val state = #theorems toolkit after_qed (valid_goals@independence_goals) st
+  (* Tactic that applies valid_raw_varI' to the first |valid_goals| subgoals *)
+  fun tac ctxt = 
+    map_index (fn (i,_) => TRY (resolve_tac ctxt @{thms valid_raw_varI'} (i+1))) valid_goals |> rev |> EVERY
+  val state = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (tac ctxt)), Position.no_range) state
     |> ensure_result (fn _ => "Failed to apply rule valid_raw_varI'") |> Seq.hd
   in state end
 
@@ -106,7 +150,7 @@ val declare_variable_command_parser =
     >> (fn ((x,y),z) => (x,y,z)))
   |> Parse.and_list1
 
-val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>declare_variable\<close> "Run a Hoare logic command (with proof obligation)"
+val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>declare_variables\<close> "Run a Hoare logic command (with proof obligation)"
   (declare_variable_command_parser >> (declare_variables_command lthy_toolkit))
 
 (* TODO add an independence tactic *)
