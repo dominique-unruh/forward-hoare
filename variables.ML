@@ -16,6 +16,8 @@ fun Abs_var_const memT valT = Const(\<^const_name>\<open>Abs_var\<close>,
   HOLogic.mk_prodT (memT --> valT, valT --> memT --> memT)
     --> mk_varT memT valT)
 
+val independence_add = Named_Theorems.add \<^named_theorems>\<open>independence\<close>
+
 fun declare_variables (toolkit:'a toolkit) (decls:(binding*term*term) list) (st:'a) = let
   type decl = {binding:binding, getter:term, setter:term,
                def_thm:thm Unsynchronized.ref, valT:typ}
@@ -49,7 +51,7 @@ fun declare_variables (toolkit:'a toolkit) (decls:(binding*term*term) list) (st:
 
   fun mk_pairs [] = []
     | mk_pairs (k::ks) = (map (fn l => (k,l)) ks) @ mk_pairs ks
-  val pairs = mk_pairs keys |> \<^print>
+  val pairs = mk_pairs keys
   fun independence_goal x y = let
     val xdecl = Symtab.lookup decls x |> the' (fn _ => "declare_variables")
     val ydecl = Symtab.lookup decls y |> the' (fn _ => "declare_variables")
@@ -89,7 +91,7 @@ fun declare_variables (toolkit:'a toolkit) (decls:(binding*term*term) list) (st:
 
     (* Create independence theorems *)
     fun independence (x,y) thm st = let
-      fun derive (name, flip, rule) st = let
+      fun derive (name, flip, indep_add, rule) st = let
         val xdecl = Symtab.lookup decls x |> the' (fn _ => "declare_variables")
         val ydecl = Symtab.lookup decls y |> the' (fn _ => "declare_variables")
         val derived_thm = rule OF [!(#def_thm xdecl), !(#def_thm ydecl)]
@@ -98,14 +100,18 @@ fun declare_variables (toolkit:'a toolkit) (decls:(binding*term*term) list) (st:
                               else Binding.qualify_name true (#binding xdecl) y
         val binding = Binding.qualify_name true binding name
         val st = #note toolkit binding derived_thm st
-        val st = #declaration toolkit (fn m => Thm.apply_attribute Simplifier.simp_add 
-                        (Morphism.thm m derived_thm) #> snd) st
+        val attrs = if indep_add then [Simplifier.simp_add, independence_add]
+                                 else [Simplifier.simp_add]
+        fun apply_attrs thm context = 
+          fold (fn attr => fn (thm,context) => Thm.apply_attribute attr thm context) attrs (thm,context)
+          |> snd
+        val st = #declaration toolkit (fn m => apply_attrs (Morphism.thm m derived_thm)) st
       in st end
       val st = fold derive
-          [("indep", false, @{thm declare_variable_command_helper_indep}),
-           ("indep", true, @{thm declare_variable_command_helper_indep_flip}),
-           ("indep'", false, @{thm declare_variable_command_helper_indep'}),
-           ("indep'", true, @{thm declare_variable_command_helper_indep'_flip})] st
+          [("indep", false, true, @{thm declare_variable_command_helper_indep}),
+           ("indep", true, true, @{thm declare_variable_command_helper_indep_flip}),
+           ("indep'", false, false, @{thm declare_variable_command_helper_indep'}),
+           ("indep'", true, false, @{thm declare_variable_command_helper_indep'_flip})] st
     in st end
     val st = fold2 independence pairs independence_thms st
 

@@ -10,9 +10,6 @@ declare_variables
   z get "mem_z" set "\<lambda>a m. m\<lparr>mem_z := a\<rparr>"
   by auto
 
-(* TODO: should be declared automatically *)
-lemmas [independence] = x.y.indep y.x.indep x.z.indep z.x.indep y.z.indep z.y.indep
-
 Hoare config (prhl) memory = memory
 
 Hoare program (prhl) left:  \<open>PROG[x:=$x+1; z:=nat ($x); y <$ spmf_of_set {1,2}]\<close>
