@@ -4,70 +4,22 @@ begin
 
 record memory = mem_x :: int   mem_y :: "real"   mem_z :: nat
 
+(* TODO: Should be possible to declare many variables in one go,
+    together with independence theorems *)
+declare_variable x get "mem_x" set "\<lambda>a m. m\<lparr>mem_x := a\<rparr>"
+  by auto
 
-definition "x_raw = (mem_x, \<lambda>a m. m\<lparr>mem_x := a\<rparr>)"
+declare_variable y get "mem_y" set "\<lambda>a m. m\<lparr>mem_y := a\<rparr>"
+  by auto
 
-lemma valid_x_raw: "valid_raw_var (UNIV, x_raw)"
-  unfolding x_raw_def apply (rule valid_raw_varI) by auto
-
-lift_definition x :: "(memory,int) var" is x_raw
-  using valid_x_raw by auto
-
-lemma [simp]: "valid_var x"
-  apply transfer using valid_x_raw by auto  
-
-lemma [simp]: "eval_var x m = mem_x m"
-  apply transfer using valid_x_raw unfolding x_raw_def by auto
-
-lemma [simp]: "update_var x a m = m\<lparr>mem_x := a\<rparr>"
-  apply transfer unfolding x_raw_def by simp
-
-
-definition "y_raw = (mem_y, \<lambda>a m. m\<lparr>mem_y := a\<rparr>)"
-
-lemma valid_y_raw: "valid_raw_var (UNIV, y_raw)"
-  unfolding y_raw_def apply (rule valid_raw_varI) by auto
-
-lift_definition y :: "(memory,real) var" is y_raw
-  using valid_y_raw by auto
-
-lemma [simp]: "valid_var y"
-  apply transfer using valid_y_raw by auto  
-
-lemma [simp]: "eval_var y m = mem_y m"
-  apply transfer using valid_y_raw unfolding y_raw_def by auto
-
-lemma [simp]: "update_var y a m = m\<lparr>mem_y := a\<rparr>"
-  apply transfer unfolding y_raw_def by simp
-
-
-definition "z_raw = (mem_z, \<lambda>a m. m\<lparr>mem_z := a\<rparr>)"
-
-lemma valid_z_raw: "valid_raw_var (UNIV, z_raw)"
-  unfolding z_raw_def apply (rule valid_raw_varI) by auto
-
-lift_definition z :: "(memory,nat) var" is z_raw
-  using valid_z_raw by auto
-
-lemma [simp]: "valid_var z"
-  apply transfer using valid_z_raw by auto  
-
-lemma [simp]: "eval_var z m = mem_z m"
-  apply transfer using valid_z_raw unfolding z_raw_def by auto
-
-lemma [simp]: "update_var z a m = m\<lparr>mem_z := a\<rparr>"
-  apply transfer unfolding z_raw_def by simp
-
-
-
-
+declare_variable z get "mem_z" set "\<lambda>a m. m\<lparr>mem_z := a\<rparr>"
+  by auto
 
 lemma [simp, independence]:
   "independent_vars x y" "independent_vars y x"
   "independent_vars x z" "independent_vars z x"
   "independent_vars y z" "independent_vars z y"
   unfolding independent_vars_def by simp_all
-
 
 lemma [simp]:
   "independent_of mem_x y" "independent_of mem_y x"

@@ -1,5 +1,6 @@
 theory PRHL
   imports CryptHOL.CryptHOL Forward_Hoare
+  keywords "declare_variable" :: thy_goal and "get" and "set"
 begin
 
 no_notation m_inv ("inv\<index> _" [81] 80)
@@ -52,6 +53,14 @@ lemma valid_raw_varI:
   shows "valid_raw_var (R,g,s)"
   unfolding valid_raw_var_def using assms apply auto
   by (metis (full_types) rangeI) 
+
+lemma valid_raw_varI':
+  fixes R and g and s
+  assumes "\<And>m a. g (s a m) = a"
+  assumes "\<And>m. s (g m) m = m"
+  assumes "\<And>m a b. s a (s b m) = s a m"
+  shows "valid_raw_var (UNIV,g,s)"
+  apply (rule valid_raw_varI) using assms by auto
 
 lemma valid_raw_var_setget: "valid_raw_var (R,g,s) \<Longrightarrow> a\<in>R \<Longrightarrow> g (s a m) = a"
   and valid_raw_var_getset: "valid_raw_var (R,g,s) \<Longrightarrow> s (g m) m = m"
@@ -960,6 +969,25 @@ lemma split_invariant_implication_imp2:
   assumes "\<forall>m1 m2. A m1 m2 \<longrightarrow> (C \<longrightarrow> B m1 m2)"
   shows "C \<Longrightarrow> \<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
   using assms by auto
+
+
+lemma declare_variable_command_helper_valid:
+  assumes "x \<equiv> Abs_var (g,s)"
+  assumes "valid_raw_var (UNIV,g,s)"
+  shows "valid_var x"
+  by (simp add: Abs_var_inverse assms valid_var.rep_eq)
+
+lemma declare_variable_command_helper_eval:
+  assumes "x \<equiv> Abs_var (g,s)"
+  assumes "valid_raw_var (UNIV,g,s)"
+  shows "eval_var x m = g m"
+  by (simp add: Abs_var_inverse assms eval_var.rep_eq)
+
+lemma declare_variable_command_helper_update:
+  assumes "x \<equiv> Abs_var (g,s)"
+  assumes "valid_raw_var (UNIV,g,s)"
+  shows "update_var x a m = s a m"
+  by (simp add: Abs_var_inverse assms update_var.rep_eq)
 
 subsection \<open>Concrete syntax for programs\<close>
 
