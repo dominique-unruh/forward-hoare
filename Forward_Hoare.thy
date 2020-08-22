@@ -1,5 +1,5 @@
 theory Forward_Hoare
-  imports Main
+  imports Main Utils
   keywords
         "hoare" :: prf_decl % "proof"
     and "hoare'" :: prf_goal % "proof"

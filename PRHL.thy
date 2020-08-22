@@ -225,7 +225,6 @@ proof (unfold rhoare_def, rule, rule, rule)
     by (rule rel_spmfI[where pq=\<mu>'])
 qed
 
-definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
 abbreviation (input) "independentL_of e x \<equiv> (\<And>m2. independent_of (\<lambda>m1. e m1 m2) x)"
 abbreviation (input) "independentR_of e x \<equiv> (\<And>m1. independent_of (\<lambda>m2. e m1 m2) x)"
 
@@ -244,9 +243,6 @@ abbreviation (input) "independentR_of_prog e x \<equiv> (\<And>m1. independent_o
 (*  unfolding independent_of_def using assms by metis *)
 
 definition "instructions_commute a b \<longleftrightarrow> semantics [a,b] = semantics [b,a]"
-
-definition "independent_vars a b \<longleftrightarrow> (\<forall>x y mem.
-   update_var b y (update_var a x mem) = update_var a x (update_var b y mem))"
 
 (* TODO: generalize using independent_of_prog or similar? Or add cases for Sample? *)
 lemma commute_indep:
@@ -307,75 +303,12 @@ proof -
     by -
 qed
 
+(* TODO remove? *)
 ML \<open>
 fun infer ctxt ts = 
   Drule.infer_instantiate' ctxt (ts |> map (Thm.cterm_of ctxt #> SOME))
 \<close>
 
-named_theorems independence
-
-lemma independent_of_const[simp]:
-  shows "independent_of (\<lambda>m. a) x"
-  unfolding independent_of_def by simp
-
-lemma independent_of_split[intro]:
-  assumes "independent_of a x"
-  assumes "independent_of b x"
-  shows "independent_of (\<lambda>m. (a m) (b m)) x"
-  using assms unfolding independent_of_def by auto
-
-lemma update_var_current:
-  fixes x :: \<open>('mem,'x) var\<close>
-  shows "update_var x (eval_var x m) m = m"
-proof (cases "valid_var x")
-  case True
-  then show ?thesis
-    apply (transfer fixing: m)
-    unfolding valid_raw_var_def by auto
-next
-  case False
-  show ?thesis
-    unfolding invalid_is_dummy_var[OF False]
-    by simp
-qed
-
-lemma update_var_twice: 
-  fixes x :: \<open>('mem,'x) var\<close>
-  shows "update_var x a (update_var x b m) = update_var x a m"
-proof (cases "valid_var x")
-  case True
-  then show ?thesis
-    apply (transfer fixing: m)
-    unfolding valid_raw_var_def by auto
-next
-  case False
-  show ?thesis
-    unfolding invalid_is_dummy_var[OF False]
-    by simp
-qed
-
-lemma independent_of_var[intro]:
-  fixes x :: "('mem,'x) var" and y :: "('mem,'y) var"
-  assumes "independent_vars x y"
-  shows "independent_of (\<lambda>m. eval_var x m) y"
-  unfolding independent_of_def independent_vars_def
-proof (rule+, cases "valid_var x")
-  case True
-  fix m a
-  have "eval_var x m = eval_var x (update_var x (eval_var x m) (update_var y a m))"
-    using True by (rule eval_update_var[symmetric])
-  also have "\<dots> = eval_var x (update_var y a (update_var x (eval_var x m) m))"
-    using assms unfolding independent_vars_def by simp
-  also have "\<dots> = eval_var x (update_var y a m)"
-    by (subst update_var_current, simp)
-  finally show "eval_var x m = eval_var x (update_var y a m)"
-    by -
-next
-  case False
-  fix m a
-  show "eval_var x m = eval_var x (update_var y a m)"
-    unfolding invalid_is_dummy_var[OF False] by simp
-qed
 
 lemma sort_program_empty_aux:
   "semantics [] = semantics []"

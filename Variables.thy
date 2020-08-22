@@ -1,11 +1,7 @@
 theory Variables
-  (* imports "HOL-Library.Cardinality"  *)
-  imports CryptHOL.CryptHOL Forward_Hoare
+  imports Main "HOL-Library.Cardinality" Utils
   keywords "declare_variable" :: thy_goal and "get" and "set"
 begin
-
-(* TODO remove *)
-no_notation m_inv ("inv\<index> _" [81] 80)
 
 definition "less_eq_card A B \<longleftrightarrow> (\<exists>f. inj_on f A \<and> range f \<subseteq> B)"
 
@@ -197,7 +193,7 @@ proof (cases "valid_raw_var (UNIV, raw_dummy_var :: ('mem,'val) raw_var)")
   show "mk_var_untyped_raw (raw_dummy_var::('mem,'val) raw_var) = ({undefined}, raw_dummy_var)"
     using raw_dummy_var_valid 
     unfolding mk_var_untyped_raw_def raw_dummy_var_def UNIV_val
-    by simp
+    by (simp add: o_def)
 next
   case False
   show "mk_var_untyped_raw (raw_dummy_var::('mem,'val) raw_var) = ({undefined}, raw_dummy_var)"
@@ -255,6 +251,7 @@ proof (transfer fixing: m)
   obtain g s where x_def: "x = (g,s)" 
     apply atomize_elim by auto
   define i where "i = (some_embedding::'val\<Rightarrow>'mem)"
+  note disjE[consumes 1, case_names left right, cases pred] (* Not needed when importing MFMC_Misc *)
   assume "valid_raw_var (UNIV, x) \<or> x = raw_dummy_var"
   then show "(case mk_var_untyped_raw x of (R, g, s) \<Rightarrow> g) m = some_embedding (fst x m)"
   proof (cases)
@@ -281,6 +278,7 @@ proof (transfer fixing: m a)
   obtain g s where x_def: "x = (g,s)" 
     apply atomize_elim by auto
   define i where "i = (some_embedding::'val\<Rightarrow>'mem)"
+  note disjE[consumes 1, case_names left right, cases pred] (* Not needed when importing MFMC_Misc *)
   assume "valid_raw_var (UNIV, x) \<or> x = raw_dummy_var"
   then show "(case mk_var_untyped_raw x of (R, g, s) \<Rightarrow> \<lambda>a. s (force_into a R))
             (some_embedding a) m = snd x a m"
@@ -333,7 +331,76 @@ lemma declare_variable_command_helper_update:
   shows "update_var x a m = s a m"
   by (simp add: Abs_var_inverse assms update_var.rep_eq)
 
-ML_file "variables.ML"
+definition "independent_of e x \<longleftrightarrow> (\<forall>m a. e m = e (update_var x a m))"
 
+definition "independent_vars a b \<longleftrightarrow> (\<forall>x y mem.
+   update_var b y (update_var a x mem) = update_var a x (update_var b y mem))"
+
+named_theorems independence
+
+lemma independent_of_const[simp]:
+  shows "independent_of (\<lambda>m. a) x"
+  unfolding independent_of_def by simp
+
+lemma independent_of_split[intro]:
+  assumes "independent_of a x"
+  assumes "independent_of b x"
+  shows "independent_of (\<lambda>m. (a m) (b m)) x"
+  using assms unfolding independent_of_def by auto
+
+lemma update_var_current:
+  fixes x :: \<open>('mem,'x) var\<close>
+  shows "update_var x (eval_var x m) m = m"
+proof (cases "valid_var x")
+  case True
+  then show ?thesis
+    apply (transfer fixing: m)
+    unfolding valid_raw_var_def by auto
+next
+  case False
+  show ?thesis
+    unfolding invalid_is_dummy_var[OF False]
+    by simp
+qed
+
+lemma update_var_twice: 
+  fixes x :: \<open>('mem,'x) var\<close>
+  shows "update_var x a (update_var x b m) = update_var x a m"
+proof (cases "valid_var x")
+  case True
+  then show ?thesis
+    apply (transfer fixing: m)
+    unfolding valid_raw_var_def by auto
+next
+  case False
+  show ?thesis
+    unfolding invalid_is_dummy_var[OF False]
+    by simp
+qed
+
+lemma independent_of_var[intro]:
+  fixes x :: "('mem,'x) var" and y :: "('mem,'y) var"
+  assumes "independent_vars x y"
+  shows "independent_of (\<lambda>m. eval_var x m) y"
+  unfolding independent_of_def independent_vars_def
+proof (rule+, cases "valid_var x")
+  case True
+  fix m a
+  have "eval_var x m = eval_var x (update_var x (eval_var x m) (update_var y a m))"
+    using True by (rule eval_update_var[symmetric])
+  also have "\<dots> = eval_var x (update_var y a (update_var x (eval_var x m) m))"
+    using assms unfolding independent_vars_def by simp
+  also have "\<dots> = eval_var x (update_var y a m)"
+    by (subst update_var_current, simp)
+  finally show "eval_var x m = eval_var x (update_var y a m)"
+    by -
+next
+  case False
+  fix m a
+  show "eval_var x m = eval_var x (update_var y a m)"
+    unfolding invalid_is_dummy_var[OF False] by simp
+qed
+
+ML_file "variables.ML"
 
 end

@@ -1,7 +1,7 @@
 structure Variables = struct
 
 local
-open Forward_Hoare
+open Utils
 in
 
 fun dest_Abs_var (Const(\<^const_name>\<open>Abs_var\<close>,_) $ t) = t
@@ -51,6 +51,8 @@ fun declare_variable_command (toolkit:'a toolkit) binding getter_str setter_str 
 val _ = Outer_Syntax.local_theory_to_proof \<^command_keyword>\<open>declare_variable\<close> "Run a Hoare logic command (with proof obligation)"
   (declare_variable_command_parser >> (fn ((x,get),set) => 
     declare_variable_command lthy_toolkit x get set))
+
+(* TODO add an independence tactic *)
 
 end
 
