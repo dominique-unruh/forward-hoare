@@ -1,12 +1,6 @@
-theory Test
-  imports Demo_Hoare "HOL-Eisbach.Eisbach"
+theory Test_Demo_Hoare
+  imports Demo_Hoare
 begin
-
-ML_file "test.ML"
-
-ML \<open>
-open Forward_Hoare
-\<close>
 
 Hoare program (demo_logic) prog: \<open>PROG[x := 5; y <- ?; x += y]\<close>
 
