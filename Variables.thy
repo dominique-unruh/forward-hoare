@@ -43,7 +43,6 @@ typedef ('mem,'val) var = "{v::('mem,'val) raw_var. valid_raw_var (UNIV,v) \<or>
   apply auto by (metis prod.exhaust) 
 setup_lifting type_definition_var
 
-
 definition "some_embedding = (if less_eq_card (UNIV::'a set) (UNIV::'b set) then
 (SOME i::'a\<Rightarrow>'b. inj i \<and> i undefined = undefined) else (\<lambda>_. undefined))"
 

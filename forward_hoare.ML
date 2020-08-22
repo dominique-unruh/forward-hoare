@@ -673,7 +673,7 @@ fun new_hoare (toolkit:'a toolkit) binding after_qed0 (logic:logic) range (preco
       val st = auto_preserve_invariant_implications toolkit
                 (#known_implications precondition) postcondition st
       in after_qed0 (st, info) end
-  val state = #theorem toolkit after_qed valid_prop st
+  val state = toolkit_theorem toolkit after_qed valid_prop st
 
 in state end
 
@@ -831,7 +831,7 @@ in st end
 fun dummy_proof_obligation (toolkit:'a toolkit) (command:'a->'a) st = let
   val _ = warning "This command never produces proof obligations. Use hoare-command instead of hoare'-command"
   val st = command st
-  val state = #theorem toolkit (K I) \<^prop>\<open>PROP x \<equiv> PROP x\<close> st
+  val state = toolkit_theorem toolkit (K I) \<^prop>\<open>PROP x \<equiv> PROP x\<close> st
 in state end
 
 
