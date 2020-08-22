@@ -17,44 +17,60 @@ fun Abs_var_const memT valT = Const(\<^const_name>\<open>Abs_var\<close>,
     --> mk_varT memT valT)
 
 fun declare_variables (toolkit:'a toolkit) (decls:(binding*term*term) list) (st:'a) = let
-  val ctxt = #context toolkit st |> Context.proof_of
+  type decl = {binding:binding, getter:term, setter:term,
+               def_thm:thm Unsynchronized.ref, valT:typ}
+  val decls = Symtab.make (decls |> map (fn (b,g,s) => (Binding.name_of b,
+    {binding=b, getter=g, setter=s, 
+      valT = fastype_of g |> range_type,
+      def_thm=Unsynchronized.ref @{thm asm_rl}, (* dummy thm *)
+      valid_thm=Unsynchronized.ref @{thm asm_rl} (* dummy thm *)
+      })))
 
-  fun def (binding,getter,setter) st = let
-    val (memT,valT) = fastype_of getter |> dest_funT
-    val x_def = Abs_var_const memT valT $ HOLogic.mk_prod (getter,setter)
-    (* Defining the variable: x = Abs_var (getter,setter) *)
-    val thm_binding = Binding.suffix_name "_def" binding
-    val (_,def_thm,st) = #define toolkit binding thm_binding x_def st
+  val memT = Symtab.get_first (fn (_,decl) => SOME (fastype_of (#getter decl) |> domain_type)) decls
+    |> the' (fn _ => "declare_variables")
 
-    (* Creating the validity proof goal term *)
-    val valid_raw_goal = let val tuple = HOLogic.mk_prod (HOLogic.mk_UNIV valT, HOLogic.mk_prod (getter,setter))
-      in Const(\<^const_name>\<open>valid_raw_var\<close>, fastype_of tuple --> HOLogic.boolT) $ tuple |> HOLogic.mk_Trueprop end
-  in ((def_thm,valid_raw_goal),st) end
+  (* Defining the variable: x = Abs_var (getter,setter) *)
+  fun def decl st = let
+    val x_def = Abs_var_const memT (#valT decl) $ HOLogic.mk_prod (#getter decl,#setter decl)
+    val thm_binding = Binding.suffix_name "_def" (#binding decl)
+    val (_,def_thm,st) = #define toolkit (#binding decl) thm_binding x_def st
+    val _ = #def_thm decl := def_thm
+  in st end
+  val st = Symtab.fold (def o snd) decls st
 
-  (* Define all variables, creating all proof goals *)
-  val (results, st) = fold_map def decls st
-  val (def_thms, valid_raw_goals) = split_list results
-  val bindings = map #1 decls
-  val getters = map #2 decls
-  val setters = map #3 decls
+  (* Goal term: valid_raw_var (UNIV,getter,setter) *)
+  fun valid decl = let
+    val tuple = HOLogic.mk_prod (HOLogic.mk_UNIV (#valT decl), HOLogic.mk_prod (#getter decl, #setter decl))
+    val goal = Const(\<^const_name>\<open>valid_raw_var\<close>, fastype_of tuple --> HOLogic.boolT) $ tuple |> HOLogic.mk_Trueprop
+  in goal end
 
-  (* Declaring derived theorems (and adding to simplifier) *)
+  (* Keys and valid_goals are ordered the same way *)
+  val (keys,valid_goals) = Symtab.dest decls |> map (fn (name,decl) => (name,valid decl)) |> split_list
+
+  (* Declaring derived theorems *)
   fun after_qed valid_thms st : 'a = let
-    fun derive' (binding,def_thm,valid_thm) (name, rule) st = let
-      val derived_thm = rule OF [def_thm, valid_thm]
-      val st = #note toolkit (Binding.qualify_name true binding name) derived_thm st
-      val st = #declaration toolkit (fn m => Thm.apply_attribute Simplifier.simp_add 
-                      (Morphism.thm m derived_thm) #> snd) st
+    (* Putting the proven theorems into the decls-map *)
+    val _ = map2 (fn key => fn valid_thm => 
+        #valid_thm (Symtab.lookup decls key |> the) := valid_thm) keys valid_thms
+
+    (* Declare the derived theorems for one variable *)
+    fun process_decl (key,decl) st = let
+      fun derive (name, rule) st = let
+        val derived_thm = rule OF [!(#def_thm decl), !(#valid_thm decl)]
+        val st = #note toolkit (Binding.qualify_name true (#binding decl) name) derived_thm st
+        val st = #declaration toolkit (fn m => Thm.apply_attribute Simplifier.simp_add 
+                        (Morphism.thm m derived_thm) #> snd) st
+      in st end
+      val st = fold derive
+          [("valid", @{thm declare_variable_command_helper_valid}),
+           ("eval", @{thm declare_variable_command_helper_eval}),
+           ("update", @{thm declare_variable_command_helper_update})] st
     in st end
-    fun derive x st = fold (derive' x)
-        [("valid", @{thm declare_variable_command_helper_valid}),
-         ("eval", @{thm declare_variable_command_helper_eval}),
-         ("update", @{thm declare_variable_command_helper_update})] st
-    val st = fold derive (zip3 bindings def_thms valid_thms) st
+    val st = Symtab.fold process_decl decls st
   in st end
 
   (* Proving validity: valid_raw_var (UNIV,getter,setter) for each var *)
-  val state = #theorems toolkit after_qed valid_raw_goals st
+  val state = #theorems toolkit after_qed valid_goals st
   fun valid_raw_tac ctxt = ALLGOALS (resolve_tac ctxt @{thms valid_raw_varI'})
   val state = Proof.apply (Method.Basic (fn ctxt => SIMPLE_METHOD (valid_raw_tac ctxt)), Position.no_range) state
     |> ensure_result (fn _ => "Failed to apply rule valid_raw_varI'") |> Seq.hd

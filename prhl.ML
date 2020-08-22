@@ -14,6 +14,7 @@ struct
  *)
 
 open Forward_Hoare
+open Utils
 
 fun is_prod (Type(\<^type_name>\<open>prod\<close>,_)) = true
   | is_prod _ = false

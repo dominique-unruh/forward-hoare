@@ -20,6 +20,7 @@ functor Forward_Hoare_Utils() = struct
 
 local
 open Forward_Hoare
+open Utils
 in
 
 val this_logic_reference: Forward_Hoare.logic option Unsynchronized.ref = Unsynchronized.ref NONE

@@ -44,9 +44,6 @@ fun string_of_fact_ref_attr ctxt (r,attr) =
   string_of_fact_ref r ^
   (Attrib.pretty_attribs ctxt attr |> Pretty.block |> Pretty.string_of)
 
-fun the' _ (SOME x) = x
-  | the' msg NONE = error (msg ())
-
 fun string_of_binding kind binding = let
   val name = Binding.name_of binding
   val props = Markup.properties (Position.def_properties_of (Binding.pos_of binding)) (Markup.entity kind name)

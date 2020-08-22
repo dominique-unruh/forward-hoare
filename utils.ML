@@ -1,5 +1,8 @@
 structure Utils = struct
 
+fun the' _ (SOME x) = x
+  | the' msg NONE = error (msg ())
+
 type 'a toolkit = {
   define: binding -> binding -> term -> 'a -> (term*thm*'a),
   declaration: declaration -> 'a -> 'a,
