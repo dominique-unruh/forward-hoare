@@ -200,7 +200,10 @@ fun same_weight_tac ctxt = Raw_Simplifier.rewrite_goal_tac ctxt @{thms
       weight_semantics_Set_cons[THEN eq_reflection]}
       THEN' resolve_tac ctxt @{thms refl}
 
-fun wp_tac ctxt = (* print_subgoal_tac ctxt "wp_tac" THEN' *) resolve_tac ctxt @{thms wp_Set_cons1 wp_Set_cons2 wp_skip12}
+fun wp_tac ctxt = (* print_subgoal_tac ctxt "wp_tac" THEN' *) resolve_tac ctxt 
+  @{thms wp_Set_cons1 wp_Set_cons2 wp_Sample_cons1 wp_Sample_cons2 wp_skip12
+  wp_IfThenElse_cons
+  wp_Set_cons wp_Sample_cons wp_skip}
 
 fun DETERM' tac i = DETERM (tac i)
 

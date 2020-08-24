@@ -2,7 +2,7 @@ theory Test_PRHL
   imports PRHL
 begin
 
-record memory = mem_x :: int   mem_y :: "real"   mem_z :: nat
+record memory = mem_x :: nat   mem_y :: nat  mem_z :: nat
 
 declare_variables
   x get "mem_x" set "\<lambda>a m. m\<lparr>mem_x := a\<rparr>" and
@@ -12,53 +12,43 @@ declare_variables
 
 Hoare config (prhl) memory = memory
 
-Hoare program (prhl) left:  \<open>PROG[x:=$x+1; z:=nat ($x); y <$ spmf_of_set {1,2}]\<close>
-Hoare program (prhl) right: \<open>PROG[x:=$x+2; z:=nat ($x); y <$ spmf_of_set {2+$z,3+$z}]\<close>
+Hoare program (prhl) right: \<open>PROG[y:=$y+1; if $y < $x then y := $y+$x else {}]\<close>
+Hoare program (prhl) left:  \<open>PROG[x:=$x+1; if $x < $y then x := $x+$y else {}]\<close>
 
 Hoare config (prhl) left = left
 Hoare config (prhl) right = right
 
 lemma True proof
 
-  hoare invariant (prhl) 
-    start2: "INV2[$x1=$x2+1 \<and> $z1=$z2] :: (memory, memory) rinvariant"
 
-  thm \<open>{start2 \<Rightarrow> $x1=$x2+1}\<close>
-  thm \<open>{start2 \<Rightarrow> $z1=$z2}\<close>
-  
-  hoare step1L: range 1 ~ \<emptyset> pre start2 post step1L = default
+  hoare invariant (prhl) start': \<open>INV2[$x1=$y2 \<and> $y1=$x2] :: (memory,memory) rinvariant\<close>
+  (* TODO: why do we need to enforce the type here? *)
 
-  have [hoare_invi]: "{step1L \<Rightarrow> $x1=$x2+2}"
-    apply wp
-    using start2_inv_def by auto
+  hoare step1': range 1~1 pre start' post step1' = default
+  have step1'_imp[hoare_invi]: \<open>{step1' \<Rightarrow> $x1=$y2 \<and> $y1=$x2}\<close>
+    apply wp using start'_inv_def by auto
 
-  hoare step1LR: extends step1L range \<emptyset> ~ 1 post step1LR = default
-
-  have bla [hoare_invi]: "{step1LR \<Rightarrow> $x1=$x2}"
-    apply wp
-    using \<open>{step1L \<Rightarrow> $x1=$x2+2}\<close>
+  hoare' step1': range 2~2 pre start' post step2' = default
+    (* TODO: should be automatic in this case *)
     by auto
 
-  hoare step2: extends step1LR range 2~2 post step2 = default
-
-  have [hoare_invi]: "{step2 \<Rightarrow> $z1=$z2}"
+  have step2'_imp[hoare_invi]: \<open>{step2' \<Rightarrow> $x1=$y2 \<and> $y1=$x2}\<close>
     apply wp
-    using \<open>{step1LR \<Rightarrow> $x1=$x2}\<close>
-    by simp
 
-  hoare' step3test: extends step2 range 3~3 post step3test = default
-    by auto
+  hoare invariant (prhl) start: "INV[$x\<ge>$y \<and> $x\<noteq>0]"
+  hoare step1: range 1 pre start post step1 = default
 
-  hoare' step3: extends step2 range 3~3 post step3 = 
-        rnd \<open>EXPR2[map_spmf (\<lambda>x. (x,x+1+$z2)) (spmf_of_set {1,2})]\<close>
-    by auto
-
-  have \<open>{step3 \<Rightarrow> $y1+1+$z2=$y2}\<close>
+  have [hoare_invi]: \<open>{step1 \<Rightarrow> $x>0}\<close>
     apply wp by simp
 
-  from \<open>{step3 \<Rightarrow> $x1=$x2}\<close> \<open>{step3 \<Rightarrow> $z1=$z2}\<close>
-  have [hoare_invi]: "{step3 \<Rightarrow> $x1*$z1 = $x2*$z2}"
-    by auto
+(* TODO: use extend *)
+  hoare step2: range 2 pre step1 post step2 = default
+  have [hoare_invi]: \<open>{step2 \<Rightarrow> $x\<noteq>0}\<close>
+    apply wp using \<open>{step1 \<Rightarrow> $x>0}\<close> by simp
+
+  have [hoare_invi]: \<open>{step2 \<Rightarrow> $x\<ge>$y}\<close>
+    apply wp using \<open>{step1 \<Rightarrow> $x>0}\<close> by simp
+
 
 qed
 

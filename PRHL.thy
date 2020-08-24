@@ -430,7 +430,15 @@ lemma wp_Sample_cons:
     (\<lambda>m. \<forall>a\<in>set_spmf (e m). M (update_var x a m)) mem \<longrightarrow> B mem"
   using assms unfolding postcondition_default_def by auto
 
-(* TODO: wp rule for IfThenElse *)
+(* TODO: wp rule for IfThenElse1,2 *)
+
+lemma wp_IfThenElse_cons:
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default r B mem \<longrightarrow> C mem"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default p Ap mem \<longrightarrow> B mem"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default q Aq mem \<longrightarrow> B mem"
+  shows "\<forall>mem. postcondition_default (IfThenElse c p q # r)
+    (\<lambda>mem. if c mem then Ap mem else Aq mem) mem \<longrightarrow> C mem"
+  using assms unfolding postcondition_default_def apply auto by blast
 
 lemma wp_skip:
   shows "\<forall>mem. postcondition_default [] B mem \<longrightarrow> B mem"
