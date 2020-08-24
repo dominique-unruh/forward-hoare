@@ -365,16 +365,26 @@ lemma join_rhoare:
    match the "invariant m" part of the conclusion of the rule
  *)
 
-lemma wp_generic[hoare_wp add]:
+lemma wp_default2[hoare_wp add]:
+  fixes x :: "('mem,'val) var"
+  assumes "invariant \<equiv> postcondition_default2 p1 p2 A"
+  assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> A' m1 m2"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<And>m2. \<forall>m1. postcondition_default p1 (\<lambda>m1. B m1 m2) m1 \<longrightarrow> C m1 m2"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<And>m1. \<forall>m2. postcondition_default p2 (A' m1) m2 \<longrightarrow> B m1 m2"
+  shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> C m1 m2"
+  using assms(2-4) unfolding assms(1) postcondition_default2_def postcondition_default_def 
+  apply auto by metis
+
+(* lemma wp_generic[hoare_wp add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default2 p1 p2 A"
   assumes "\<And>m1 m2. A m1 m2 \<Longrightarrow> A' m1 m2"
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>m1 m2. postcondition_default2 p1 p2 A' m1 m2 \<longrightarrow> B m1 m2"
   shows "\<forall>m1 m2. invariant m1 m2 \<longrightarrow> B m1 m2"
   using assms(2,3) unfolding assms(1) postcondition_default2_def 
-  apply auto by metis
+  apply auto by metis *)
 
-lemma wp_generic1[hoare_wp add]:
+lemma wp_default[hoare_wp add]:
   fixes x :: "('mem,'val) var"
   assumes "invariant \<equiv> postcondition_default p A"
   assumes "\<And>m. A m \<Longrightarrow> A' m"
@@ -389,34 +399,34 @@ lemma wp_rnd[hoare_wp add]:
   using assms unfolding postcondition_rnd_def
   apply auto by blast
 
-lemma wp_Set_cons1:
+(* lemma wp_Set_cons1:
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 p1 p2 M mem1 mem2 \<longrightarrow> B mem1 mem2"
   shows "\<forall>mem1 mem2. postcondition_default2 (Set x e # p1) p2 (\<lambda>m1 m2. M (update_var x (e m1) m1) m2) mem1 mem2 \<longrightarrow> B mem1 mem2"
   using assms unfolding postcondition_default2_def
-  by auto
+  by auto *)
 
-lemma wp_Sample_cons1:
+(* lemma wp_Sample_cons1:
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 p1 p2 M mem1 mem2 \<longrightarrow> B mem1 mem2"
   shows "\<forall>mem1 mem2. postcondition_default2 (Sample x e # p1) p2
                (\<lambda>m1 m2. \<forall>a\<in>set_spmf (e m1). M (update_var x a m1) m2) mem1 mem2 \<longrightarrow> B mem1 mem2"
-  using assms unfolding postcondition_default2_def apply auto by blast
+  using assms unfolding postcondition_default2_def apply auto by blast *)
 
-lemma wp_Set_cons2:
+(* lemma wp_Set_cons2:
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 p1 p2 M mem1 mem2 \<longrightarrow> B mem1 mem2"
   shows "\<forall>mem1 mem2. postcondition_default2 p1 (Set x e # p2) (\<lambda>m1 m2. M m1 (update_var x (e m2) m2)) mem1 mem2 \<longrightarrow> B mem1 mem2"
   using assms unfolding postcondition_default2_def
-  by auto
+  by auto *)
 
-lemma wp_Sample_cons2:
+(* lemma wp_Sample_cons2:
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem1 mem2. postcondition_default2 p1 p2 M mem1 mem2 \<longrightarrow> B mem1 mem2"
-  shows "\<forall>mem1 mem2. postcondition_default2 p1 (Sample x e # p2) 
+  shows "\<forall>mem1 mem2. postcondition_default2 p1 (Sample x e # p2)
                (\<lambda>m1 m2. \<forall>a\<in>set_spmf (e m2). M m1 (update_var x a m2)) mem1 mem2 \<longrightarrow> B mem1 mem2"
-  using assms unfolding postcondition_default2_def apply auto by blast
+  using assms unfolding postcondition_default2_def apply auto by blast *)
 
-lemma wp_skip12:
+(* lemma wp_skip12:
   shows "\<forall>mem1 mem2. postcondition_default2 [] [] B mem1 mem2 \<longrightarrow> B mem1 mem2"
   unfolding postcondition_default2_def
-  by auto
+  by auto *)
 
 lemma wp_Set_cons:
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default p M mem \<longrightarrow> B mem"
@@ -429,8 +439,6 @@ lemma wp_Sample_cons:
   shows "\<forall>mem. postcondition_default (Sample x e # p) 
     (\<lambda>m. \<forall>a\<in>set_spmf (e m). M (update_var x a m)) mem \<longrightarrow> B mem"
   using assms unfolding postcondition_default_def by auto
-
-(* TODO: wp rule for IfThenElse1,2 *)
 
 lemma wp_IfThenElse_cons:
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default r B mem \<longrightarrow> C mem"
@@ -457,7 +465,6 @@ lemma independent_of_prog_Set:
   shows "independent_of_prog A [Set x e]"
   using assms unfolding independent_of_prog_def independent_of_def
   by simp
-
 
 lemma independent_of_prog_Set_cons:
   assumes "independent_of A x"

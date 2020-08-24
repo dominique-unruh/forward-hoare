@@ -20,7 +20,6 @@ Hoare config (prhl) right = right
 
 lemma True proof
 
-
   hoare invariant (prhl) start': \<open>INV2[$x1=$y2 \<and> $y1=$x2] :: (memory,memory) rinvariant\<close>
   (* TODO: why do we need to enforce the type here? *)
 
@@ -28,12 +27,12 @@ lemma True proof
   have step1'_imp[hoare_invi]: \<open>{step1' \<Rightarrow> $x1=$y2 \<and> $y1=$x2}\<close>
     apply wp using start'_inv_def by auto
 
-  hoare' step1': range 2~2 pre start' post step2' = default
+  hoare' step2': extends step1' range 2~2 post step2' = default
     (* TODO: should be automatic in this case *)
     by auto
 
   have step2'_imp[hoare_invi]: \<open>{step2' \<Rightarrow> $x1=$y2 \<and> $y1=$x2}\<close>
-    apply wp
+    apply wp using step1'_imp by auto
 
   hoare invariant (prhl) start: "INV[$x\<ge>$y \<and> $x\<noteq>0]"
   hoare step1: range 1 pre start post step1 = default
@@ -41,8 +40,7 @@ lemma True proof
   have [hoare_invi]: \<open>{step1 \<Rightarrow> $x>0}\<close>
     apply wp by simp
 
-(* TODO: use extend *)
-  hoare step2: range 2 pre step1 post step2 = default
+  hoare step2: extends step1 range 2 post step2 = default
   have [hoare_invi]: \<open>{step2 \<Rightarrow> $x\<noteq>0}\<close>
     apply wp using \<open>{step1 \<Rightarrow> $x>0}\<close> by simp
 
