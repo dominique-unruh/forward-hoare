@@ -142,8 +142,9 @@ fun make_syntax_type (Type(name, Ts)) = Term.list_comb
 fun tr_EXPR_like T _ e =   let
   fun replace i (Const(\<^syntax_const>\<open>_variable_prhl\<close>,_) $ Free(n,_)) =
         @{const eval_var(dummy,dummy)} $ Free(n, dummyT) $ Bound i
-    | replace i (Const(\<^syntax_const>\<open>_expression_raw_prhl\<close>,_) $ e) =
-        e $ Bound i
+    | replace i (Const(\<^syntax_const>\<open>_the_memory_prhl\<close>,_)) = Bound i
+    | replace _ (Const(\<^syntax_const>\<open>_the_memory1_prhl\<close>,_)) = error "$\<MM>1 not allowed in nonrelational expression"
+    | replace _ (Const(\<^syntax_const>\<open>_the_memory2_prhl\<close>,_)) = error "$\<MM>2 not allowed in nonrelational expression"
     | replace _ (Const(\<^syntax_const>\<open>_variable_prhl\<close>,_) $ _) = error "$ must precede an identifier"
     | replace i (t1$t2) = replace i t1 $ replace i t2
     | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
@@ -163,8 +164,9 @@ fun tr_EXPR2_like T _ e =   let
         val lr = case last of #"1" => 1 | #"2" => 0 |
                     _ => error ("Variable must be indexed. ($"^n^"1 or $"^n^"2 instead of $"^n^")")
       in @{const eval_var(dummy,dummy)} $ Free(name, dummyT) $ Bound (i+lr) end
-    | replace i (Const(\<^syntax_const>\<open>_expression_raw_prhl\<close>,_) $ e) =
-        e $ Bound (i+1) $ Bound i
+    | replace i (Const(\<^syntax_const>\<open>_the_memory1_prhl\<close>,_)) = Bound (i+1)
+    | replace i (Const(\<^syntax_const>\<open>_the_memory2_prhl\<close>,_)) = Bound i
+    | replace _ (Const(\<^syntax_const>\<open>_the_memory_prhl\<close>,_)) = error "$\<MM> not allowed in relational expression"
     | replace _ (Const(\<^syntax_const>\<open>_variable_prhl\<close>,_) $ _) = error "$ must precede an identifier"
     | replace i (t1$t2) = replace i t1 $ replace i t2
     | replace i (Abs(n,t,body)) = Abs(n,t,replace (i+1) body)
@@ -175,15 +177,14 @@ fun tr_EXPR2_like T _ e =   let
     Const(\<^syntax_const>\<open>_constrain\<close>, dummyT) $ t $ make_syntax_type (dummyT --> dummyT --> T)
   end
 
-(* TODO: better translation *)
 fun print_tr_EXPR_like _ (Abs(_,_,body)) = let
     fun tr i ((c as Const(\<^const_syntax>\<open>eval_var\<close>,_)) $ (x as Const(\<^syntax_const>\<open>_free\<close>,_) $ Free _) $ Bound i') =
           if i=i' then Const(\<^syntax_const>\<open>_variable_prhl\<close>,dummyT) $ x
           else c $ tr i x $ Bound i'
-      | tr i (e $ Bound i') =
-          if i=i' then Const(\<^syntax_const>\<open>_expression_raw_prhl\<close>,dummyT) $ e
-          else tr i e $ Bound i'
-      | tr i (Bound i') = if i=i' then Const(\<^syntax_const>\<open>_expression_raw_prhl\<close>,dummyT) $ Abs("mem",dummyT,Bound 0)
+      | tr i ((c as Const(\<^const_syntax>\<open>eval_var\<close>,_)) $ (x as Const _) $ Bound i') =
+          if i=i' then Const(\<^syntax_const>\<open>_variable_prhl\<close>,dummyT) $ x
+          else c $ tr i x $ Bound i'
+      | tr i (Bound i') = if i=i' then Const(\<^syntax_const>\<open>_the_memory_prhl\<close>,dummyT)
                           else Bound i'
       | tr i (t1$t2) = tr i t1 $ tr i t2
       | tr i (Abs(n,T,t)) = Abs(n, T, tr (i+1) t)
@@ -191,7 +192,7 @@ fun print_tr_EXPR_like _ (Abs(_,_,body)) = let
       | tr _ (v as Var _) = v
       | tr _ (c as Const _) = c
     in tr 0 body end
-  | print_tr_EXPR_like (_:Proof.context) e = Const(\<^syntax_const>\<open>_expression_raw_prhl\<close>, dummyT) $ e
+  | print_tr_EXPR_like (_:Proof.context) e = e $ Const(\<^syntax_const>\<open>_the_memory_prhl\<close>,dummyT)
 
 fun same_weight_tac ctxt = Raw_Simplifier.rewrite_goal_tac ctxt @{thms 
       fst_conv[THEN eq_reflection] snd_conv[THEN eq_reflection]

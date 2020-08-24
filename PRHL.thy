@@ -588,7 +588,9 @@ syntax "_invariant_prhl" :: "'a \<Rightarrow> 'a" ("INV[_]")
 syntax "_invariant2_prhl" :: "'a \<Rightarrow> 'a" ("INV2[_]")
 hide_type (open) id
 syntax "_variable_prhl" :: "id \<Rightarrow> 'a" ("$_" 1000)
-syntax "_expression_raw_prhl" :: "'a \<Rightarrow> 'a" ("${_}")
+syntax "_the_memory_prhl" :: "id \<Rightarrow> 'a" ("$\<MM>" 1000)
+syntax "_the_memory1_prhl" :: "id \<Rightarrow> 'a" ("$\<MM>1" 1000)
+syntax "_the_memory2_prhl" :: "id \<Rightarrow> 'a" ("$\<MM>2" 1000)
 
 ML_file \<open>prhl.ML\<close>
 
@@ -602,8 +604,6 @@ in
   (\<^syntax_const>\<open>_invariant_prhl\<close>, EXPR_like HOLogic.boolT),
   (\<^syntax_const>\<open>_invariant2_prhl\<close>, EXPR2_like HOLogic.boolT)
 ] end\<close>
-
-(* term "(INV2[$x1 = $x2], INV[$x = (1::nat)])" *)
 
 abbreviation skip ("PROG[]") where "skip \<equiv> ([]::'mem program)"
 
@@ -665,13 +665,13 @@ print_translation \<open>[
 
 term \<open>INSTR[x <$ return_spmf ($x+$y)]\<close>
 
-term \<open>[Set x (\<lambda>mem. \<lambda>x. x=mem)]\<close> (* TODO fix printing *)
+term \<open>[Set x (\<lambda>mem. \<lambda>x. x mem)]\<close>
 
-(* term \<open>PROG[]\<close> *)
+term \<open>INSTR[x := eval_var x $\<MM>]\<close>
 
 term \<open>INSTR[x := $x]\<close>
 
-term \<open>PROG[x := 0; x := $x+1]\<close>
+term \<open>\<lambda>z. PROG[x := z]\<close>
 
 term \<open>PROG[x := 0; if $x=$y then {y := 0; y := 1} else x := 1]\<close>
 

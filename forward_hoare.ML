@@ -438,7 +438,7 @@ fun set_current_logic_command (toolkit:'a toolkit) (logic:logic) st = let
   in #declaration toolkit (K (set_current_logic logic)) st end
 
 fun define_program_command (toolkit:'a toolkit) (logic:string*Position.T) binding content (st:'a) : 'a = let
-val _ = print_with_markup content
+(* val _ = print_with_markup content *)
   val context = #context toolkit st
   val ctxt = Context.proof_of context
   (* val thy = Context.theory_of context *)
