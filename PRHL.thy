@@ -37,6 +37,7 @@ type_synonym 'mem untyped_spmf_expression = \<open>('mem,'mem spmf) expression\<
 datatype 'mem instruction = 
   SetRaw "'mem untyped_var" "'mem untyped_expression"
   | SampleRaw "'mem untyped_var" "'mem untyped_spmf_expression"
+  | IfThenElse "('mem,bool) expression" "'mem instruction list" "'mem instruction list"
 
 definition Set :: "('mem,'val) var \<Rightarrow> ('mem,'val) expression \<Rightarrow> 'mem instruction" where
   "Set x e = SetRaw (mk_var_untyped x) ((some_embedding::'val\<Rightarrow>'mem) o e)"
@@ -48,9 +49,15 @@ type_synonym 'mem "program" = "'mem instruction list"
 
 section \<open>Semantics\<close>
 
-fun semantics1 :: "'mem instruction \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
+fun semantics1 :: "'mem instruction \<Rightarrow> 'mem \<Rightarrow> 'mem spmf"
+  and semantics :: "'mem program \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
   "semantics1 (SetRaw x e) m = return_spmf (update_untyped_var x (e m) m)"
 | "semantics1 (SampleRaw x e) m = map_spmf (\<lambda>a. update_untyped_var x a m) (e m)"
+| "semantics1 (IfThenElse c P Q) m = (if (c m) then semantics P m else semantics Q m)"
+
+| "semantics [] m = return_spmf m"
+| "semantics (c#p) m = bind_spmf (semantics1 c m) (semantics p)"
+
 
 lemma semantics1_Set[simp]:
   fixes x :: "('mem,'val) var" and a :: 'val
@@ -79,10 +86,6 @@ lemma semantics1_Sample_invalid:
   shows "semantics1 (Sample x e) m = scale_spmf (weight_spmf (e m)) (return_spmf m)"
   unfolding invalid_is_dummy_var[OF assms] Sample_def
   by (auto simp: map_spmf_conv_bind_spmf bind_spmf_const update_untyped_var spmf.map_comp o_def)
-
-fun semantics :: "'mem program \<Rightarrow> 'mem \<Rightarrow> 'mem spmf" where
-  "semantics [] m = return_spmf m"
-| "semantics (c#p) m = bind_spmf (semantics1 c m) (semantics p)"
 
 lemma semantics_Nil[simp]: "semantics [] = return_spmf"
   by auto
@@ -303,13 +306,6 @@ proof -
     by -
 qed
 
-(* TODO remove? *)
-ML \<open>
-fun infer ctxt ts = 
-  Drule.infer_instantiate' ctxt (ts |> map (Thm.cterm_of ctxt #> SOME))
-\<close>
-
-
 lemma sort_program_empty_aux:
   "semantics [] = semantics []"
   by simp
@@ -433,6 +429,8 @@ lemma wp_Sample_cons:
   shows "\<forall>mem. postcondition_default (Sample x e # p) 
     (\<lambda>m. \<forall>a\<in>set_spmf (e m). M (update_var x a m)) mem \<longrightarrow> B mem"
   using assms unfolding postcondition_default_def by auto
+
+(* TODO: wp rule for IfThenElse *)
 
 lemma wp_skip:
   shows "\<forall>mem. postcondition_default [] B mem \<longrightarrow> B mem"
@@ -590,6 +588,7 @@ syntax "_invariant_prhl" :: "'a \<Rightarrow> 'a" ("INV[_]")
 syntax "_invariant2_prhl" :: "'a \<Rightarrow> 'a" ("INV2[_]")
 hide_type (open) id
 syntax "_variable_prhl" :: "id \<Rightarrow> 'a" ("$_" 1000)
+syntax "_expression_raw_prhl" :: "'a \<Rightarrow> 'a" ("${_}")
 
 ML_file \<open>prhl.ML\<close>
 
@@ -606,38 +605,78 @@ in
 
 (* term "(INV2[$x1 = $x2], INV[$x = (1::nat)])" *)
 
-nonterminal instruction_syntax_prhl
+abbreviation skip ("PROG[]") where "skip \<equiv> ([]::'mem program)"
+
+nonterminal instruction_syntax_prhl and program_syntax_prhl and block_syntax_prhl
+
 syntax "_instruction_set_prhl" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_prhl" ("_ := _")
 syntax "_instruction_sample_prhl" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_prhl" ("_ <$ _")
+syntax "_instruction_if_prhl" 
+  :: "'a \<Rightarrow> block_syntax_prhl \<Rightarrow> block_syntax_prhl \<Rightarrow> instruction_syntax_prhl"
+            ("if _ then _ else _")
 syntax "_instruction_prhl" :: "instruction_syntax_prhl \<Rightarrow> 'a" ("INSTR[_]")
 
-translations "_instruction_prhl (_instruction_set_prhl x e)" 
-          \<rightharpoonup> "CONST Set x (_expression_prhl e)"
-translations "_instruction_prhl (_instruction_sample_prhl x e)" 
-          \<rightharpoonup> "CONST Sample x (_expression_prhl e)"
+syntax "_block_prhl" :: "program_syntax_prhl \<Rightarrow> block_syntax_prhl" ("{_}")
+syntax "_singleton_block_prhl" :: "instruction_syntax_prhl \<Rightarrow> block_syntax_prhl" ("_")
+syntax "_empty_block_prhl" :: "block_syntax_prhl" ("{}")
+syntax "_print_as_block_prhl" :: "_ \<Rightarrow> _"
 
-print_translation \<open>[
-(\<^const_syntax>\<open>Set\<close>, fn ctxt => fn [x,n] =>
-  Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
-    (Const(\<^syntax_const>\<open>_instruction_set_prhl\<close>,dummyT) $ x $ n)
-  handle TERM("dest_literal_syntax",_) => raise Match),
-
-(\<^const_syntax>\<open>Sample\<close>, fn ctxt => fn [x,n] =>
-  Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
-    (Const(\<^syntax_const>\<open>_instruction_sample_prhl\<close>,dummyT) $ x $ n)
-  handle TERM("dest_literal_syntax",_) => raise Match)
-]\<close>
-
-term \<open>INSTR[x <$ return_spmf ($x+$y)]\<close>
-
-nonterminal "program_syntax_prhl"
 syntax "_program_cons_prhl" :: "instruction_syntax_prhl \<Rightarrow> program_syntax_prhl \<Rightarrow> program_syntax_prhl" ("_; _")
 syntax "_program_single_prhl" :: "instruction_syntax_prhl \<Rightarrow> program_syntax_prhl" ("_")
 syntax "_program_prhl" :: "program_syntax_prhl \<Rightarrow> 'a" ("PROG[_]")
 
+translations "_instruction_prhl (_instruction_set_prhl x e)"
+          \<rightharpoonup> "CONST Set x (_expression_prhl e)"
+translations "_instruction_prhl (_instruction_sample_prhl x e)" 
+          \<rightharpoonup> "CONST Sample x (_expression_prhl e)"
+translations "_instruction_prhl (_instruction_if_prhl c P Q)"
+          \<rightharpoonup> "CONST IfThenElse (_expression_prhl c) P Q"
+
+translations "_block_prhl b" \<rightharpoonup> "_program_prhl b"
+translations "_singleton_block_prhl c" \<rightharpoonup> "[_instruction_prhl c]"
+translations "_empty_block_prhl" \<rightharpoonup> "CONST Nil"
+translations "_block_prhl p" \<leftharpoondown> "_print_as_block_prhl (_program_prhl p)"
+translations "_empty_block_prhl" \<leftharpoondown> "_print_as_block_prhl []"
+translations "i" \<leftharpoondown> "_block_prhl (_program_single_prhl i)"
+
 translations "_program_prhl (_program_cons_prhl i is)" \<rightleftharpoons> "_instruction_prhl i # _program_prhl is"
+translations "_program_prhl (_program_single_prhl i)" \<rightleftharpoons> "_instruction_prhl i # CONST skip"
 translations "_program_prhl (_program_single_prhl i)" \<rightleftharpoons> "[_instruction_prhl i]"
 
+(* Print translations *)
+
+print_translation \<open>[
+(\<^const_syntax>\<open>Set\<close>, fn ctxt => fn [x,e] =>
+  Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_set_prhl\<close>,dummyT) $ x $ PRHL.print_tr_EXPR_like ctxt e)),
+
+(\<^const_syntax>\<open>Sample\<close>, fn ctxt => fn [x,e] =>
+  Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_sample_prhl\<close>,dummyT) $ x $ PRHL.print_tr_EXPR_like ctxt e)),
+
+(\<^const_syntax>\<open>IfThenElse\<close>, fn ctxt => fn [c,p,q] =>
+  Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
+    ((Const(\<^syntax_const>\<open>_instruction_if_prhl\<close>,dummyT) $
+      PRHL.print_tr_EXPR_like ctxt c) $ 
+      (Const(\<^syntax_const>\<open>_print_as_block_prhl\<close>,dummyT)$p) $
+      (Const(\<^syntax_const>\<open>_print_as_block_prhl\<close>,dummyT)$q)))
+
+]\<close>
+
+term \<open>INSTR[x <$ return_spmf ($x+$y)]\<close>
+
+term \<open>[Set x (\<lambda>mem. \<lambda>x. x=mem)]\<close> (* TODO fix printing *)
+
+(* term \<open>PROG[]\<close> *)
+
+term \<open>INSTR[x := $x]\<close>
+
 term \<open>PROG[x := 0; x := $x+1]\<close>
+
+term \<open>PROG[x := 0; if $x=$y then {y := 0; y := 1} else x := 1]\<close>
+
+term \<open>PROG[]\<close>
+
+term "Nil :: 'a instruction list"
 
 end

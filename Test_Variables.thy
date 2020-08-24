@@ -14,7 +14,6 @@ print_theorems
 
 (* Test *)
 
-
 lemma
   "independent_vars x y" "independent_vars y x"
   "independent_vars x z" "independent_vars z x"

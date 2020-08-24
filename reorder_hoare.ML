@@ -142,6 +142,7 @@ structure Logic = Hoare_Logic(
       HOLogic.mk_imp (inv1 $ Bound 0, inv2 $ Bound 0))
 
   fun invariant_implication_lhs (Const(\<^const_name>\<open>All\<close>,_) $ Abs(_,_, Const(\<^const_name>\<open>implies\<close>,_) $ (inv1 $ _) $ _)) = inv1
+    | invariant_implication_lhs t = raise TERM ("invariant_implication_lhs", [t])
 
   val subgoal_tactics = [("independence_tac",independence_tac)]
 )
