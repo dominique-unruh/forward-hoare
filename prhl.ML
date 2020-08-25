@@ -93,6 +93,11 @@ fun indep_tac ctxt = let
   end
   ) *)
 
+
+datatype rangestep = Line of int
+type range1 = rangestep list
+type range1p = string * range1
+
 fun swap_instructions ctxt a b = let
   val T = fastype_of a
   val prop = Const(\<^const_name>\<open>instructions_commute\<close>, T --> T --> HOLogic.boolT) $ a $ b |> HOLogic.mk_Trueprop
@@ -101,32 +106,33 @@ fun swap_instructions ctxt a b = let
   val thm = Goal.prove ctxt [] [] prop (fn {context=ctxt,...} => tac ctxt)
   in thm end
 
-fun insert_into_ordered ctxt (n,i) ([],_) = let
+fun insert_into_ordered ctxt (Line n,i) ([],_) : range1 * term * thm = let
       val thm = infer ctxt [i] @{thm insert_into_ordered_singleton_aux}
-      in ([n], HOLogic.mk_list (fastype_of i) [i], thm) end
-  | insert_into_ordered ctxt (n,i) (n'::n's, is) =
+      in ([Line n], HOLogic.mk_list (fastype_of i) [i], thm) end
+  | insert_into_ordered ctxt (Line n,i) (Line n'::n's, is) =
     if n = n'
     then error ("Duplicate instruction index " ^ string_of_int n)
     else if n < n' 
     then let
       val thm = Drule.infer_instantiate' ctxt [i |> Thm.cterm_of ctxt |> SOME, is |> Thm.cterm_of ctxt |> SOME] @{thm insert_into_ordered_prepend_aux}
-      in (n::n'::n's, HOLogic.cons_const (fastype_of i) $ i $ is, thm) end
+      in (Line n::Line n'::n's, HOLogic.cons_const (fastype_of i) $ i $ is, thm) end
 
     else case is of
       Const(\<^const_name>\<open>Cons\<close>,_) $ i' $ i's => let
         (* semantics [i,i'] = semantics [i',i] *)
         val swap_thm = swap_instructions ctxt i i'
         (* ii's_thm: semantics (i::i's) = semantics ii's *)
-        val (nn's, ii's, ii's_thm) = insert_into_ordered ctxt (n,i) (n's,i's)
+        val (nn's, ii's, ii's_thm) = insert_into_ordered ctxt (Line n,i) (n's,i's)
         val i'ii's = HOLogic.cons_const (fastype_of i') $ i' $ ii's
       
         val thm0 = infer ctxt [i, i', i's, ii's] @{thm insert_into_ordered_aux}
         val thm = thm0 OF [swap_thm, ii's_thm]
-      in (n'::nn's, i'ii's, thm) end
+      in (Line n'::nn's, i'ii's, thm) end
     | _ => raise TERM("insert_into_ordered: not a list",[is])
 
-fun sort_program _ ([],prog) = ([],prog,@{thm sort_program_empty_aux})
-  | sort_program ctxt (n::ns, prog) = (case prog of
+fun sort_program _ ([]:range1,prog) : range1 * term * thm = 
+        ([],prog,@{thm sort_program_empty_aux})
+  | sort_program ctxt (n::ns : range1, prog) = (case prog of
       Const(\<^const_name>\<open>Cons\<close>,_) $ i $ is => let
         val (ns',is',thm_sort) = sort_program ctxt (ns, is)
         val (nns',iis',thm_insert) = insert_into_ordered ctxt (n,i) (ns',is')
@@ -281,18 +287,26 @@ structure Logic1 = Hoare_Logic(
   fun the_left_program options = options |> #left_program |> the' (fn _ => "No left program configured. Use 'hoare (tmp_logic) config left = name'")
   fun the_right_program options = options |> #right_program |> the' (fn _ => "No right program configured. Use 'hoare (tmp_logic) config left = name'")
 
-  datatype range = Range of string * int list | Range2 of string * int list * string * int list
+  datatype range = Range of range1p |
+    Range2 of range1p * range1p
 
   fun program_term_typ options = 
     programT (#memory_type options |> the' (fn _ => "Memory type not set. Use \"Hoare config memory = <typ>\"."))
   fun invariant_typ options = 
     (#memory_type options |> the' (fn _ => "Memory type not set. Use \"Hoare config memory = <typ>\".")) --> dummyT
 
-  fun pretty_range1 [] = Pretty.str "\<emptyset>"
+(*   fun pretty_range1 [] = Pretty.str "\<emptyset>"
     | pretty_range1 range = Pretty.commas (range |> map (string_of_int #> Pretty.str)) |> Pretty.block
   fun pretty_range _ (Range (_,range)) = pretty_range1 range
-    | pretty_range _ (Range2 (_,range1,_,range2)) = 
-        Pretty.block [pretty_range1 range1, Pretty.str " ~ ", pretty_range1 range2]
+    | pretty_range _ (Range2 ((_,range1),(_,range2))) = 
+        Pretty.block [pretty_range1 range1, Pretty.str " ~ ", pretty_range1 range2] *)
+  fun pretty_rangestep (Line i) = (i |> string_of_int |> Pretty.str)
+  fun pretty_range1 ([] : range1) = Pretty.str "\<emptyset>"
+    | pretty_range1 (range) = Pretty.commas (range |> map pretty_rangestep) |> Pretty.block
+  fun pretty_range1p ((_,r) : range1p) = pretty_range1 r
+  fun pretty_range _ (Range range) = pretty_range1p range
+    | pretty_range _ (Range2 (range1,range2)) = 
+      Pretty.block [pretty_range1p range1, Pretty.str " ~ ", pretty_range1p range2]
 
   fun check_program _ prog = (HOLogic.dest_list prog; ())
     handle TERM _ => error "Program must be a list of instructions"
@@ -362,12 +376,13 @@ structure Logic1 = Hoare_Logic(
     ("rnd", postcondition_rnd_parse)
     ]
 
+  fun extract_rangestep prog (Line i) = nth prog (i-1)
   fun extract_range ctxt (Range (progname,range)) = let
         val prog = get_my_program ctxt progname
         val prog' = prog |> HOLogic.dest_list
-        val extr' = map (fn i => nth prog' (i-1)) range
+        val extr' = map (extract_rangestep prog') range
       in HOLogic.mk_list (fastype_of prog |> dest_listT) extr' end
-    | extract_range ctxt (Range2 (p1,r1,p2,r2)) = let
+    | extract_range ctxt (Range2 ((p1,r1),(p2,r2))) = let
         val t1 = extract_range ctxt (Range (p1,r1))
         val t2 = extract_range ctxt (Range (p2,r2))
       in HOLogic.mk_prod (t1,t2) end
@@ -375,13 +390,15 @@ structure Logic1 = Hoare_Logic(
   val tilde = Parse.sym_ident :-- (fn "~" => Scan.succeed () | _ => Scan.fail) >> #1;
   val emptyset = Parse.sym_ident :-- (fn "\<emptyset>" => Scan.succeed () | _ => Scan.fail) >> #1;
 
-  val index_list : int list parser =
-    Parse.list1 Parse.nat || (emptyset >> K [])
+  val range_step_parser = Parse.nat >> Line
+
+  val range1_parser : rangestep list parser =
+    Parse.list1 range_step_parser || (emptyset >> K [])
 
   fun read_range (options:options) _ : range context_parser = 
-    Scan.lift (index_list -- Scan.option (tilde |-- index_list))
+    Scan.lift (range1_parser -- Scan.option (tilde |-- range1_parser))
       >> (fn (indices,NONE) => Range (get_current_program_name (#util_options options), indices)
-           | (indices1,SOME indices2) => Range2 (the_left_program options, indices1, the_right_program options, indices2))
+           | (indices1,SOME indices2) => Range2 ((the_left_program options, indices1), (the_right_program options, indices2)))
 
   fun check_invariant _ _ = ()
 
@@ -428,8 +445,8 @@ structure Logic1 = Hoare_Logic(
     val thm = @{thm join_hoare} OF [hoare_append, p13_thm, sorted_thm]
   in (Range (prog12,range13),thm) end
 
-  | join_hoare ctxt _ (Range2 (prog12,range12,prog12',range12'))
-                    _ (Range2 (prog23,range23,prog23',range23')) _ thm12 thm23 = let
+  | join_hoare ctxt _ (Range2 ((prog12,range12),(prog12',range12')))
+                    _ (Range2 ((prog23,range23),(prog23',range23'))) _ thm12 thm23 = let
     val _ = if prog12 <> prog23 then error ("Trying to join Hoare judgments from different left programs " ^ prog12 ^ " and " ^ prog23) else ()
     val _ = if prog12' <> prog23' then error ("Trying to join Hoare judgments from different right left programs " ^ prog12 ^ " and " ^ prog23) else ()
     val p12 = extract_range ctxt (Range (prog12,range12))
@@ -454,7 +471,7 @@ structure Logic1 = Hoare_Logic(
     val (range13',_,sorted_thm') = sort_program ctxt (range12'@range23', p13')
     (* val _ = sorted_thm |> \<^print> *)
     val thm = @{thm join_rhoare} OF [hoare_append, p13_thm, p13_thm', sorted_thm, sorted_thm']
-  in (Range2 (prog12,range13,prog12',range13'),thm) end
+  in (Range2 ((prog12,range13),(prog12',range13')),thm) end
 
   | join_hoare _ _ _ _ _ _ _ _ =
     error "Joining relational and non-relational Hoare judgments not supported"

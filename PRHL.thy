@@ -4,6 +4,9 @@ begin
 
 no_notation m_inv ("inv\<index> _" [81] 80)
 
+instance unit :: CARD_1
+  apply intro_classes by auto
+
 section \<open>Programs\<close>
 
 lemma less_eq_card_trans[trans]: 
@@ -45,6 +48,9 @@ definition Set :: "('mem,'val) var \<Rightarrow> ('mem,'val) expression \<Righta
 definition Sample :: "('mem,'val) var \<Rightarrow> ('mem,'val spmf) expression \<Rightarrow> 'mem instruction" where
   "Sample x e = SampleRaw (mk_var_untyped x) (map_spmf (some_embedding::'val\<Rightarrow>'mem) o e)"
 
+definition Assert :: "('mem,bool) expression \<Rightarrow> 'mem instruction" where
+  "Assert e = Sample unit_var (\<lambda>m. assert_spmf (e m))"
+
 type_synonym 'mem "program" = "'mem instruction list"
 
 section \<open>Semantics\<close>
@@ -70,6 +76,11 @@ lemma semantics1_Sample[simp]:
   shows "semantics1 (Sample x e) m = map_spmf (\<lambda>a. update_var x a m) (e m)"
   unfolding Sample_def apply simp
   by (smt map_spmf_cong o_def spmf.map_comp update_untyped_var)
+
+lemma semantics1_Assert[simp]:
+  fixes m :: 'mem
+  shows "semantics1 (Assert e) m = (if e m then return_spmf m else return_pmf None)"
+  unfolding Assert_def by (simp add: map_spmf_idI) 
 
 lemma semantics1_Set_invalid:
   fixes x :: "('mem,'val) var" and a :: 'val
@@ -616,6 +627,128 @@ lemma split_invariant_implication_imp2:
   assumes "\<forall>m1 m2. A m1 m2 \<longrightarrow> (C \<longrightarrow> B m1 m2)"
   shows "C \<Longrightarrow> \<forall>m1 m2. A m1 m2 \<longrightarrow> B m1 m2"
   using assms by auto
+
+
+section \<open>Some experiments\<close>
+
+definition spmf_sums :: "'a spmf \<Rightarrow> 'a spmf \<Rightarrow> 'a spmf \<Rightarrow> bool" where
+  "spmf_sums a b c = (\<forall>x. spmf a x + spmf b x = spmf c x)"
+
+lemma spmf_sumsI:
+  assumes "\<And>x. spmf a x + spmf b x = spmf c x"
+  shows "spmf_sums a b c"
+  unfolding spmf_sums_def using assms by simp
+
+lemma spmf_density: "measure_spmf a = density (count_space UNIV) (spmf a)"
+proof (rule measure_eqI, simp)
+  fix A
+  have "emeasure (measure_spmf a) A =  (\<integral>\<^sup>+x\<in>A. ennreal (spmf a x)\<partial>count_space UNIV)"
+    by (metis Pow_UNIV UNIV_I nn_integral_indicator nn_integral_measure_spmf sets_count_space sets_measure_spmf)
+  also have "\<dots> = emeasure (density (count_space UNIV) (\<lambda>x. ennreal (spmf a x))) A"
+    apply (subst emeasure_density)
+    by auto
+  finally show "emeasure (measure_spmf a) A =
+      emeasure (density (count_space UNIV) (\<lambda>x. ennreal (spmf a x))) A"
+    by -
+qed
+
+lemma spmf_sums_bind1:
+  fixes a b c :: "'a spmf" and d :: "'a \<Rightarrow> 'b spmf"
+  assumes "spmf_sums a b c"
+  shows "spmf_sums (a \<bind> d) (b \<bind> d) (c \<bind> d)"
+proof (rule spmf_sumsI)
+  fix x
+  have "ennreal (spmf (a \<bind> d) x) + ennreal (spmf (b \<bind> d) x)
+    = (\<integral>\<^sup>+ y. ennreal (spmf (d y) x) \<partial>measure_spmf a) +
+      (\<integral>\<^sup>+ y. ennreal (spmf (d y) x) \<partial>measure_spmf b)"
+    by (auto simp: ennreal_spmf_bind)
+  also have "\<dots> = 
+    (\<integral>\<^sup>+ y. ennreal (spmf (d y) x) \<partial>density (count_space UNIV) (\<lambda>x. ennreal (spmf a x))) +
+    (\<integral>\<^sup>+ y. ennreal (spmf (d y) x) \<partial>density (count_space UNIV) (\<lambda>x. ennreal (spmf b x)))"
+    unfolding ennreal_spmf_bind spmf_density by rule
+  also have "\<dots> = 
+     (\<Sum>\<^sup>+ y. ennreal (spmf a y) * ennreal (spmf (d y) x)) +
+     (\<Sum>\<^sup>+ y. ennreal (spmf b y) * ennreal (spmf (d y) x))"
+    apply (subst nn_integral_density) apply auto[2]
+    apply (subst nn_integral_density) by auto
+  also have "\<dots> = (\<Sum>\<^sup>+ y. ennreal (spmf c y) * ennreal (spmf (d y) x))"
+    using assms[unfolded spmf_sums_def, rule_format, symmetric]
+    by (auto simp: nn_integral_add Groups.mult_ac(2) nat_distrib(2))
+  also have "\<dots> = 
+    (\<integral>\<^sup>+ y. ennreal (spmf (d y) x) \<partial>density (count_space UNIV) (\<lambda>x. ennreal (spmf c x)))"
+    apply (subst nn_integral_density) by auto
+  also have "\<dots>
+    = (\<integral>\<^sup>+ y. ennreal (spmf (d y) x) \<partial>measure_spmf c)"
+    unfolding ennreal_spmf_bind spmf_density by rule
+  also have "\<dots> = ennreal (spmf (c \<bind> d) x)"
+    by (auto simp: ennreal_spmf_bind)
+  finally show "spmf (a \<bind> d) x + spmf (b \<bind> d) x = spmf (c \<bind> d) x"
+    by (smt ennreal_inj ennreal_plus pmf_nonneg)
+qed
+
+lemma spmf_sums_bind2:
+  fixes a b c :: "'a \<Rightarrow> 'b spmf" and d :: "'a spmf"
+  assumes "\<And>x. x\<in>set_spmf d \<Longrightarrow> spmf_sums (a x) (b x) (c x)"
+  shows "spmf_sums (d \<bind> a) (d \<bind> b) (d \<bind> c)"
+proof (rule spmf_sumsI)
+  fix x
+  have "ennreal (spmf (d \<bind> a) x) + ennreal (spmf (d \<bind> b) x)
+    = (\<integral>\<^sup>+ y. ennreal (spmf (a y) x) \<partial>measure_spmf d) +
+      (\<integral>\<^sup>+ y. ennreal (spmf (b y) x) \<partial>measure_spmf d)"
+    by (auto simp: ennreal_spmf_bind)
+  also have "\<dots> = (\<integral>\<^sup>+ y. ennreal (spmf (a y) x + spmf (b y) x) \<partial>measure_spmf d)"
+    apply (subst nn_integral_add[symmetric]) by auto
+  also have "\<dots> = (\<integral>\<^sup>+ y. ennreal (spmf (c y) x) \<partial>measure_spmf d)"
+    apply (rule nn_integral_cong_AE)
+    using assms apply (auto simp: spmf_sums_def)
+    by (simp add: ennreal_plus_if)
+  also have "\<dots> = ennreal (spmf (d \<bind> c) x)"
+    by (auto simp: ennreal_spmf_bind)
+  finally show "spmf (d \<bind> a) x + spmf (d \<bind> b) x = spmf (d \<bind> c) x"
+    by (smt ennreal_inj ennreal_plus pmf_nonneg)
+qed
+
+lemma spmf_sums_If:
+  "spmf_sums 
+  (semantics (Assert e # P) m)
+  (semantics (Assert (\<lambda>m. \<not> e m) # Q) m)
+  (semantics1 (IfThenElse e P Q) m)"
+  apply (rule spmf_sumsI) by auto
+
+lemma spmf_sums_If':
+  fixes m :: 'mem
+  shows "spmf_sums
+  (semantics (P1 @ Assert e # T @ P2) m)
+  (semantics (P1 @ Assert (\<lambda>m. \<not> e m) # F @ P2) m)
+  (semantics (P1 @ (IfThenElse e T F) # P2) m)"
+proof -
+  have sem1: "semantics [i] = semantics1 i" for i::"'mem instruction" by auto
+  have "spmf_sums
+          (semantics (P1 @ (Assert e # T) @ P2) m)
+          (semantics (P1 @ (Assert (\<lambda>m. \<not> e m) # F) @ P2) m)
+          (semantics (P1 @ [IfThenElse e T F] @ P2) m)"
+    unfolding semantics_seq
+    apply (rule spmf_sums_bind2)
+    apply (rule spmf_sums_bind1)
+    unfolding sem1
+    by (rule spmf_sums_If)
+  then show ?thesis by auto
+qed
+
+lemma spmf_sums_hoare:
+  assumes "hoare A a B"
+  assumes "hoare A b B"
+  assumes "\<And>m. A m \<Longrightarrow> spmf_sums (semantics a m) (semantics b m) (semantics c m)"
+  shows "hoare A p B"
+  sorry
+
+lemma if_merge_hoare:
+  assumes "hoare A (P1 @ Assert e # T @ P2) B"
+  assumes "hoare A (P1 @ Assert (\<lambda>m. \<not> e m) # F @ P2) B"
+  shows "hoare A (P1 @ (IfThenElse e T F) # P2) B"
+  using assms apply (rule spmf_sums_hoare)
+  by (rule spmf_sums_If')
+
 
 
 subsection \<open>Concrete syntax for programs\<close>
