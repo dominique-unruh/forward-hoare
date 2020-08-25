@@ -545,7 +545,7 @@ val _ = Theory.setup
     (Scan.succeed (Thm.declaration_attribute add_known_implication_auto))
     "Declares this theorem as an invariant implication")
 
-fun auto_subgoal_tac lenient (logic:logic) ctxt = SUBGOAL (fn (t,i) => case Term.strip_all_body t of
+fun auto_subgoal_tac lenient (logic:logic) ctxt = SUBGOAL (fn (t,i) => case Logic.strip_assums_concl t of
   Const(\<^const_name>\<open>SOLVE_WITH\<close>,_) $ str $ _ => let
     val str = HOLogic.dest_literal str
     val (str,typ) = case String.sub (str,size str-1) of

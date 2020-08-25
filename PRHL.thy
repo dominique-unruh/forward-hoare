@@ -177,6 +177,29 @@ lemma weight_semantics_Set_cons: "weight_spmf (semantics (Set x e # P) m) =
   weight_spmf (semantics P (update_var x (e m) m))"
   by simp
 
+lemma same_weight1:
+  assumes "\<lbrakk>SOLVER same_weight_tac\<rbrakk> weight_spmf (semantics p m1) = 1"
+  assumes "\<lbrakk>SOLVER same_weight_tac\<rbrakk> weight_spmf (semantics q m2) = 1"
+  shows "weight_spmf (semantics p m1) = weight_spmf (semantics q m2)"
+  using assms by simp
+
+lemma weight1_Set:
+  shows "weight_spmf (semantics1 (Set x e) m) = 1"
+  by simp
+
+lemma weight1_cons:
+  assumes "\<lbrakk>SOLVER same_weight_tac\<rbrakk> weight_spmf (semantics1 i m) = 1"
+  assumes "\<And>m. \<lbrakk>SOLVER same_weight_tac\<rbrakk> weight_spmf (semantics p m) = 1"
+  shows "weight_spmf (semantics (i#p) m) = 1"
+  using assms by (auto simp: weight_bind_spmf o_def)
+
+lemma weight1_if:
+  assumes "\<lbrakk>SOLVER same_weight_tac\<rbrakk> weight_spmf (semantics p m) = 1"
+  assumes "\<lbrakk>SOLVER same_weight_tac\<rbrakk> weight_spmf (semantics q m) = 1"
+  shows "weight_spmf (semantics1 (IfThenElse c p q) m) = 1"
+  using assms by auto
+
+
 lemma postcondition_default2_valid:
   assumes "\<lbrakk>SOLVER same_weight_tac?\<rbrakk> (\<And>m1 m2. A m1 m2 \<Longrightarrow> weight_spmf (semantics p m1) = weight_spmf (semantics q m2))"
   shows "rhoare A p q (postcondition_default2 p q A)"

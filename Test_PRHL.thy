@@ -27,9 +27,7 @@ lemma True proof
   have step1'_imp[hoare_invi]: \<open>{step1' \<Rightarrow> $x1=$y2 \<and> $y1=$x2}\<close>
     apply wp using start'_inv_def by auto
 
-  hoare' step2': extends step1' range 2~2 post step2' = default
-    (* TODO: should be automatic in this case *)
-    by auto
+  hoare step2': extends step1' range 2~2 post step2' = default
 
   have step2'_imp[hoare_invi]: \<open>{step2' \<Rightarrow> $x1=$y2 \<and> $y1=$x2}\<close>
     apply wp using step1'_imp by auto
@@ -46,8 +44,6 @@ lemma True proof
 
   have [hoare_invi]: \<open>{step2 \<Rightarrow> $x\<ge>$y}\<close>
     apply wp using \<open>{step1 \<Rightarrow> $x>0}\<close> by simp
-
-
 qed
 
 end

@@ -194,11 +194,14 @@ fun print_tr_EXPR_like _ (Abs(_,_,body)) = let
     in tr 0 body end
   | print_tr_EXPR_like (_:Proof.context) e = e $ Const(\<^syntax_const>\<open>_the_memory_prhl\<close>,dummyT)
 
-fun same_weight_tac ctxt = Raw_Simplifier.rewrite_goal_tac ctxt @{thms 
+fun same_weight_tac ctxt = (* Raw_Simplifier.rewrite_goal_tac ctxt @{thms
       fst_conv[THEN eq_reflection] snd_conv[THEN eq_reflection]
       weight_semantics_Nil[THEN eq_reflection]
-      weight_semantics_Set_cons[THEN eq_reflection]}
-      THEN' resolve_tac ctxt @{thms refl}
+      weight_semantics_Set_cons[THEN eq_reflection]
+      }
+      THEN' resolve_tac ctxt @{thms refl} *)
+  resolve_tac ctxt @{thms weight_semantics_Nil same_weight1
+    weight1_cons weight1_if weight1_Set}
 
 fun wp_tac ctxt = (* print_subgoal_tac ctxt "wp_tac" THEN' *) resolve_tac ctxt 
   @{thms wp_IfThenElse_cons wp_Set_cons wp_Sample_cons wp_skip}
