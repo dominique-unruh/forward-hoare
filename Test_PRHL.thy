@@ -20,8 +20,12 @@ Hoare config (prhl) right = right
 
 lemma True proof
 
+  hoare invariant (prhl) startTest: \<open>INV[True]\<close>
+  hoare test: range 2t(\<emptyset>) pre startTest post test = default
+
   hoare invariant (prhl) start': \<open>INV2[$x1=$y2 \<and> $y1=$x2] :: (memory,memory) rinvariant\<close>
   (* TODO: why do we need to enforce the type here? *)
+
 
   hoare step1': range 1~1 pre start' post step1' = default
   have step1'_imp[hoare_invi]: \<open>{step1' \<Rightarrow> $x1=$y2 \<and> $y1=$x2}\<close>
