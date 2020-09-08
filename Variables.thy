@@ -322,6 +322,18 @@ definition "independent_vars a b \<longleftrightarrow> (\<forall>x y mem.
 
 named_theorems independence
 
+(* TODO: add to independence tactic *)
+lemma independent_of_dummy_var[simp]: "independent_of e dummy_var"
+  unfolding independent_of_def by simp
+
+(* TODO: add to independence tactic *)
+lemma independent_vars_dummy_var[simp]: "independent_vars dummy_var x"
+  unfolding independent_vars_def by simp
+
+(* TODO: add to independence tactic *)
+lemma independent_vars_dummy_var'[simp]: "independent_vars x dummy_var"
+  unfolding independent_vars_def by simp
+
 lemma independent_of_const[simp]:
   shows "independent_of (\<lambda>m. a) x"
   unfolding independent_of_def by simp

@@ -62,7 +62,7 @@ fun semantics1 :: "'mem instruction \<Rightarrow> 'mem \<Rightarrow> 'mem spmf"
 | "semantics1 (IfThenElse c P Q) m = (if (c m) then semantics P m else semantics Q m)"
 
 | "semantics [] m = return_spmf m"
-| "semantics (c#p) m = bind_spmf (semantics1 c m) (semantics p)"
+| semantics_Cons: "semantics (c#p) m = bind_spmf (semantics1 c m) (semantics p)"
 
 
 lemma semantics1_Set[simp]:
@@ -284,35 +284,94 @@ abbreviation (input) "independentR_of_prog e x \<equiv> (\<And>m1. independent_o
    *)
 (*  unfolding independent_of_def using assms by metis *)
 
+lemma semantics1_Set_Sample:
+  "semantics1 (Set x e) = semantics1 (Sample x (\<lambda>m. return_spmf (e m)))"
+  by auto
+
+
 definition "instructions_commute a b \<longleftrightarrow> semantics [a,b] = semantics [b,a]"
 
-(* TODO: generalize using independent_of_prog or similar? Or add cases for Sample? *)
-lemma commute_indep:
+lemma instructions_commute_cong:
+  "semantics1 a = semantics1 a' \<Longrightarrow> semantics1 b = semantics1 b'
+  \<Longrightarrow> instructions_commute a b = instructions_commute a' b'"
+  unfolding instructions_commute_def by (auto simp: semantics_Cons[abs_def])
+
+lemma commute_indep_Sample_Sample:
   fixes a :: "('mem,'a) var" and b :: "('mem,'b) var"
   assumes "independent_of f a"
   assumes "independent_of e b"
   assumes "independent_vars a b"
-  shows "instructions_commute (Set a e) (Set b f)"
+  shows "instructions_commute (Sample a e) (Sample b f)"
 proof -
-  have \<open>semantics [Set a e, Set b f] mem = semantics [Set b f, Set a e] mem\<close> for mem
+  have \<open>semantics [Sample a e, Sample b f] mem = semantics [Sample b f, Sample a e] mem\<close> for mem
   proof -
-    have "f (update_var a (e mem) mem) = f mem"
+    have "f (update_var a x mem) = f mem" for x
       by (rule assms(1)[unfolded independent_of_def, rule_format, symmetric])
-    then have 1: "semantics [Set a e, Set b f] mem
-       = return_spmf (update_var b (f mem) (update_var a (e mem) mem))"
-      by simp
-    have "e (update_var b (f mem) mem) = e mem"
+    then have 1: "semantics [Sample a e, Sample b f] mem
+      = map_spmf (%(x,y). update_var b y (update_var a x mem)) (pair_spmf (e mem) (f mem))"
+      by (simp add: bind_map_spmf o_def pair_spmf_alt_def map_bind_spmf
+          map_spmf_conv_bind_spmf[symmetric] spmf.map_comp)
+    have "e (update_var b x mem) = e mem" for x
       by (rule assms(2)[unfolded independent_of_def, rule_format, symmetric])
-    then have 2: "semantics [Set b f, Set a e] mem
-       = return_spmf (update_var a (e mem) (update_var b (f mem) mem))"
-      by (simp add: )
-    show "semantics [Set a e, Set b f] mem = semantics [Set b f, Set a e] mem"
+    then have 2: "semantics [Sample b f, Sample a e] mem
+      = map_spmf (%(x,y). update_var a x (update_var b y mem)) (pair_spmf (e mem) (f mem))"
+      apply (subst pair_commute_spmf)
+      by (simp add: bind_map_spmf o_def pair_spmf_alt_def map_bind_spmf
+          map_spmf_conv_bind_spmf[symmetric] spmf.map_comp)
+    show "semantics [Sample a e, Sample b f] mem = semantics [Sample b f, Sample a e] mem"
       unfolding 1 2
       using assms(3) unfolding independent_vars_def by simp
   qed
   then show ?thesis
     unfolding instructions_commute_def by auto
 qed
+
+lemma commute_indep_Set_Sample:
+  fixes a :: "('mem,'a) var" and b :: "('mem,'b) var"
+  assumes "independent_of f a"
+  assumes "independent_of e b"
+  assumes "independent_vars a b"
+  shows "instructions_commute (Set a e) (Sample b f)"
+  apply (subst instructions_commute_cong)
+    apply (rule semantics1_Set_Sample, rule refl)
+  using assms(1) _ assms(3) apply (rule commute_indep_Sample_Sample)
+  apply (rule independent_of_split[OF _ assms(2)])
+  by simp
+
+lemma commute_indep_Sample_Set:
+  fixes a :: "('mem,'a) var" and b :: "('mem,'b) var"
+  assumes "independent_of f a"
+  assumes "independent_of e b"
+  assumes "independent_vars a b"
+  shows "instructions_commute (Sample a e) (Set b f)"
+  apply (subst instructions_commute_cong)
+    apply (rule refl, rule semantics1_Set_Sample)
+  using _ assms(2-3) apply (rule commute_indep_Sample_Sample)
+  apply (rule independent_of_split[OF _ assms(1)])
+  by simp
+
+lemma commute_indep_Assert_Set:
+  fixes a :: "('mem,'a) var" and b :: "('mem,'b) var"
+  assumes "independent_of e b"
+  shows "instructions_commute (Assert e) (Set b f)"
+  unfolding Assert_def
+  apply (rule commute_indep_Sample_Set)
+    apply simp
+  apply (rule independent_of_split[OF _ assms(1)])
+  by simp_all
+
+(* TODO: generalize using independent_of_prog or similar? Or add cases for Sample? *)
+lemma commute_indep_Set_Set:
+  fixes a :: "('mem,'a) var" and b :: "('mem,'b) var"
+  assumes "independent_of f a"
+  assumes "independent_of e b"
+  assumes "independent_vars a b"
+  shows "instructions_commute (Set a e) (Set b f)"
+  apply (subst instructions_commute_cong)
+    apply (rule refl, rule semantics1_Set_Sample)
+  using _ assms(2-3) apply (rule commute_indep_Set_Sample)
+  apply (rule independent_of_split[OF _ assms(1)])
+  by simp
 
 lemma insert_into_ordered_singleton_aux:
   "semantics [i] = semantics [i]"
@@ -345,7 +404,17 @@ proof -
     by -
 qed
 
-lemma sort_program_empty_aux:
+lemma join_with_ordered_empty_aux:
+  "semantics ([] @ prog) = semantics prog"
+  by simp
+
+lemma join_with_ordered_aux:
+  assumes "semantics (p@s) = semantics q"
+  assumes "semantics (i#q) = semantics r"
+  shows "semantics ((i#p)@s) = semantics r"
+  using assms by (simp add: semantics.simps[abs_def] o_def)
+
+(* lemma sort_program_empty_aux:
   "semantics [] = semantics []"
   by simp
 
@@ -353,7 +422,11 @@ lemma sort_program_aux:
   assumes "semantics p = semantics q"
   assumes "semantics (i#q) = semantics r"
   shows "semantics (i#p) = semantics r"
-  using assms by (simp add: semantics.simps[abs_def] o_def)
+  using assms by (simp add: semantics.simps[abs_def] o_def) *)
+
+lemma sort_program_aux:
+  "semantics (p@[]) = semantics q \<Longrightarrow> semantics p = semantics q"
+  by simp
 
 lemma semantics_seq:
   "semantics (p@q) = (\<lambda>m. semantics p m \<bind> semantics q)"
@@ -807,6 +880,7 @@ nonterminal instruction_syntax_prhl and program_syntax_prhl and block_syntax_prh
 
 syntax "_instruction_set_prhl" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_prhl" ("_ := _")
 syntax "_instruction_sample_prhl" :: "id \<Rightarrow> 'a \<Rightarrow> instruction_syntax_prhl" ("_ <$ _")
+syntax "_instruction_assert_prhl" :: "'a \<Rightarrow> instruction_syntax_prhl" ("assert _")
 syntax "_instruction_if_prhl" 
   :: "'a \<Rightarrow> block_syntax_prhl \<Rightarrow> block_syntax_prhl \<Rightarrow> instruction_syntax_prhl"
             ("if _ then _ else _")
@@ -825,6 +899,8 @@ translations "_instruction_prhl (_instruction_set_prhl x e)"
           \<rightharpoonup> "CONST Set x (_expression_prhl e)"
 translations "_instruction_prhl (_instruction_sample_prhl x e)" 
           \<rightharpoonup> "CONST Sample x (_expression_prhl e)"
+translations "_instruction_prhl (_instruction_assert_prhl e)"
+          \<rightharpoonup> "CONST Assert (_expression_prhl e)"
 translations "_instruction_prhl (_instruction_if_prhl c P Q)"
           \<rightharpoonup> "CONST IfThenElse (_expression_prhl c) P Q"
 
@@ -850,6 +926,10 @@ print_translation \<open>[
   Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
     (Const(\<^syntax_const>\<open>_instruction_sample_prhl\<close>,dummyT) $ x $ PRHL.print_tr_EXPR_like ctxt e)),
 
+(\<^const_syntax>\<open>Assert\<close>, fn ctxt => fn [e] =>
+  Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
+    (Const(\<^syntax_const>\<open>_instruction_assert_prhl\<close>,dummyT) $ PRHL.print_tr_EXPR_like ctxt e)),
+
 (\<^const_syntax>\<open>IfThenElse\<close>, fn ctxt => fn [c,p,q] =>
   Const(\<^syntax_const>\<open>_instruction_prhl\<close>,dummyT) $
     ((Const(\<^syntax_const>\<open>_instruction_if_prhl\<close>,dummyT) $
@@ -860,6 +940,8 @@ print_translation \<open>[
 ]\<close>
 
 term \<open>INSTR[x <$ return_spmf ($x+$y)]\<close>
+
+term \<open>INSTR[assert $x=1]\<close>
 
 term \<open>[Set x (\<lambda>mem. \<lambda>x. x mem)]\<close>
 

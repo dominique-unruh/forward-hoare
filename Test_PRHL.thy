@@ -13,15 +13,21 @@ declare_variables
 Hoare config (prhl) memory = memory
 
 Hoare program (prhl) right: \<open>PROG[y:=$y+1; if $y < $x then y := $y+$x else {}]\<close>
-Hoare program (prhl) left:  \<open>PROG[x:=$x+1; if $x < $y then x := $x+$y else {}]\<close>
+Hoare program (prhl) left:  \<open>PROG[z:=$z+1; if $x < $y then x := $x+$y else {}]\<close>
 
 Hoare config (prhl) left = left
 Hoare config (prhl) right = right
 
 lemma True proof
 
+  (* TODO should not be needed *)
+  have [independence]: "independent_of (\<lambda>mem. eval_var x mem < eval_var y mem) z"
+    by (tactic \<open>PRHL.independence_tac \<^context> 1\<close>)
+
   hoare invariant (prhl) startTest: \<open>INV[True]\<close>
-  hoare test: range 2t(\<emptyset>) pre startTest post test = default
+  hoare test: range 2t(0) pre startTest post test = default
+  hoare test2: extends test range 1 post test2 = default
+  hoare test3: extends test range 2t(1) post test3 = default
 
   hoare invariant (prhl) start': \<open>INV2[$x1=$y2 \<and> $y1=$x2] :: (memory,memory) rinvariant\<close>
   (* TODO: why do we need to enforce the type here? *)
