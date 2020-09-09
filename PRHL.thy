@@ -51,6 +51,9 @@ definition Sample :: "('mem,'val) var \<Rightarrow> ('mem,'val spmf) expression 
 definition Assert :: "('mem,bool) expression \<Rightarrow> 'mem instruction" where
   "Assert e = Sample unit_var (\<lambda>m. assert_spmf (e m))"
 
+definition Block :: "'mem instruction list \<Rightarrow> 'mem instruction" where 
+  "Block p = IfThenElse (\<lambda>_. True) p []"
+
 type_synonym 'mem "program" = "'mem instruction list"
 
 section \<open>Semantics\<close>
@@ -63,7 +66,6 @@ fun semantics1 :: "'mem instruction \<Rightarrow> 'mem \<Rightarrow> 'mem spmf"
 
 | "semantics [] m = return_spmf m"
 | semantics_Cons: "semantics (c#p) m = bind_spmf (semantics1 c m) (semantics p)"
-
 
 lemma semantics1_Set[simp]:
   fixes x :: "('mem,'val) var" and a :: 'val
@@ -81,6 +83,10 @@ lemma semantics1_Assert[simp]:
   fixes m :: 'mem
   shows "semantics1 (Assert e) m = (if e m then return_spmf m else return_pmf None)"
   unfolding Assert_def by (simp add: map_spmf_idI) 
+
+lemma semantics1_Block[simp]:
+  shows "semantics1 (Block p) = semantics p"
+  unfolding Block_def by auto
 
 lemma semantics1_Set_invalid:
   fixes x :: "('mem,'val) var" and a :: 'val
@@ -100,6 +106,9 @@ lemma semantics1_Sample_invalid:
 
 lemma semantics_Nil[simp]: "semantics [] = return_spmf"
   by auto
+
+lemma semantics_singleton: "semantics [i] = semantics1 i"
+  apply (rule ext) by auto
 
 type_synonym 'mem "invariant" = "'mem \<Rightarrow> bool"
 type_synonym ('m1,'m2) "rinvariant" = "'m1 \<Rightarrow> 'm2 \<Rightarrow> bool"
@@ -373,6 +382,49 @@ lemma commute_indep_Set_Set:
   apply (rule independent_of_split[OF _ assms(1)])
   by simp
 
+lemma commute_indep_BlockSet_Set:
+  fixes a :: "('mem,'a) var" and b :: "('mem,'b) var"
+  assumes "independent_of f a"
+  assumes "independent_of e b"
+  assumes "independent_vars a b"
+  shows "instructions_commute (Block [Set a e]) (Set b f)"
+  apply (subst instructions_commute_cong)
+    apply (auto simp: semantics_singleton)[2]
+  using assms by (rule commute_indep_Set_Set)
+
+lemma commute_indep_BlockAssert_Set:
+  fixes a :: "('mem,'a) var" and b :: "('mem,'b) var"
+  assumes "independent_of e b"
+  shows "instructions_commute (Block [Assert e]) (Set b f)"
+  apply (subst instructions_commute_cong)
+    apply (auto simp: semantics_singleton)[2]
+  using assms by (rule commute_indep_Assert_Set)
+
+
+lemma semantics_seq:
+  "semantics (p@q) = (\<lambda>m. semantics p m \<bind> semantics q)"
+  apply (rule ext, rename_tac m)
+  apply (induction p; simp)
+  by presburger
+
+
+lemma insert_sorted_into_sorted_aux1:
+  assumes "semantics (p@p') = semantics prog"
+  shows "semantics (Block p # Block p' # i's) = semantics (Block prog # i's)"
+  by (auto simp add: assms[symmetric] semantics_Cons[abs_def] semantics_seq)
+
+lemma insert_into_sorted_aux1:
+  assumes "semantics1 instr = semantics1 instr'"
+  assumes "semantics (instr'#prog) = semantics prog'"
+  shows "semantics (instr'#prog) = semantics prog'"
+  using assms by simp
+
+lemma sort_instruction_aux1: "semantics1 i = semantics1 i"
+  by simp
+
+lemma sort_instruction_aux2: "semantics p = semantics q \<Longrightarrow> semantics1 (Block p) = semantics1 (Block q)"
+  by simp
+
 lemma insert_into_ordered_singleton_aux:
   "semantics [i] = semantics [i]"
   by simp
@@ -427,12 +479,6 @@ lemma sort_program_aux:
 lemma sort_program_aux:
   "semantics (p@[]) = semantics q \<Longrightarrow> semantics p = semantics q"
   by simp
-
-lemma semantics_seq:
-  "semantics (p@q) = (\<lambda>m. semantics p m \<bind> semantics q)"
-  apply (rule ext, rename_tac m)
-  apply (induction p; simp)
-  by presburger
 
 lemma hoare_seq:
   assumes "hoare A p B"
@@ -552,6 +598,11 @@ lemma wp_Sample_cons:
     (\<lambda>m. \<forall>a\<in>set_spmf (e m). M (update_var x a m)) mem \<longrightarrow> B mem"
   using assms unfolding postcondition_default_def by auto
 
+schematic_goal wp_Assert_cons:
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default p M mem \<longrightarrow> B mem"
+  shows "\<forall>mem. postcondition_default (Assert e # p) (\<lambda>m. e m \<longrightarrow> M m) mem \<longrightarrow> B mem"
+  using assms unfolding postcondition_default_def by auto
+
 lemma wp_IfThenElse_cons:
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default r B mem \<longrightarrow> C mem"
   assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default p Ap mem \<longrightarrow> B mem"
@@ -559,6 +610,13 @@ lemma wp_IfThenElse_cons:
   shows "\<forall>mem. postcondition_default (IfThenElse c p q # r)
     (\<lambda>mem. if c mem then Ap mem else Aq mem) mem \<longrightarrow> C mem"
   using assms unfolding postcondition_default_def apply auto by blast
+
+lemma wp_Block_cons:
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default r B mem \<longrightarrow> C mem"
+  assumes "\<lbrakk>SOLVER wp_tac\<rbrakk> \<forall>mem. postcondition_default p A mem \<longrightarrow> B mem"
+  shows "\<forall>mem. postcondition_default (Block p # r)
+    A mem \<longrightarrow> C mem"
+  using assms unfolding postcondition_default_def by auto
 
 lemma wp_skip:
   shows "\<forall>mem. postcondition_default [] B mem \<longrightarrow> B mem"
@@ -709,10 +767,18 @@ lemma split_invariant_implication_imp2:
 definition spmf_sums :: "'a spmf \<Rightarrow> 'a spmf \<Rightarrow> 'a spmf \<Rightarrow> bool" where
   "spmf_sums a b c = (\<forall>x. spmf a x + spmf b x = spmf c x)"
 
+definition program_sums :: "'mem invariant \<Rightarrow> 'mem program \<Rightarrow> 'mem program \<Rightarrow> 'mem program \<Rightarrow> bool" where
+  "program_sums I a b c \<longleftrightarrow> (\<forall>m. I m \<longrightarrow> spmf_sums (semantics a m) (semantics b m) (semantics c m))"
+
 lemma spmf_sumsI:
   assumes "\<And>x. spmf a x + spmf b x = spmf c x"
   shows "spmf_sums a b c"
   unfolding spmf_sums_def using assms by simp
+
+lemma program_sumsI:
+  assumes "\<And>m. I m \<Longrightarrow> spmf_sums (semantics a m) (semantics b m) (semantics c m)"
+  shows "program_sums I a b c"
+  unfolding program_sums_def using assms by simp
 
 lemma spmf_density: "measure_spmf a = density (count_space UNIV) (spmf a)"
 proof (rule measure_eqI, simp)
@@ -784,18 +850,61 @@ proof (rule spmf_sumsI)
 qed
 
 lemma spmf_sums_If:
-  "spmf_sums 
-  (semantics (Assert e # P) m)
-  (semantics (Assert (\<lambda>m. \<not> e m) # Q) m)
-  (semantics1 (IfThenElse e P Q) m)"
+  "program_sums true
+  [Block (Assert e # P)]
+  [Block (Assert (\<lambda>m. \<not> e m) # Q)]
+  [IfThenElse e P Q]"
+  apply (rule program_sumsI)
   apply (rule spmf_sumsI) by auto
 
-lemma spmf_sums_If':
-  fixes m :: 'mem
-  shows "spmf_sums
-  (semantics (P1 @ Assert e # T @ P2) m)
-  (semantics (P1 @ Assert (\<lambda>m. \<not> e m) # F @ P2) m)
-  (semantics (P1 @ (IfThenElse e T F) # P2) m)"
+lemma spmf_sums_right_distrib:
+  fixes P Q1 Q2 Q :: "'mem program"
+  assumes "program_sums I Q1 Q2 Q"
+  assumes "hoare J P I"
+  shows "program_sums J (P@Q1) (P@Q2) (P@Q)"
+  apply (rule program_sumsI)
+  unfolding semantics_seq
+  apply (rule spmf_sums_bind2)
+  apply (rule assms(1)[unfolded program_sums_def, rule_format])
+  using assms(2)
+  by (simp add: pred_spmf_def hoare_def) 
+
+lemma spmf_sums_right_distrib_UNIV:
+  fixes P Q1 Q2 Q :: "'mem program"
+  assumes "program_sums true Q1 Q2 Q"
+  shows "program_sums J (P@Q1) (P@Q2) (P@Q)"
+  apply (rule spmf_sums_right_distrib)
+   apply (rule assms(1))
+  by (simp add: hoare_def)
+
+lemma spmf_sums_right_distrib_UNIV1:
+  assumes "program_sums true Q1 Q2 Q"
+  shows "program_sums J (P#Q1) (P#Q2) (P#Q)"
+  using assms spmf_sums_right_distrib_UNIV 
+  apply (rule spmf_sums_right_distrib)
+   apply (rule assms(1))
+  by (simp add: hoare_def)
+
+lemma spmf_sums_left_distrib:
+  fixes P1 P2 P Q :: "'mem program"
+  assumes "program_sums I P1 P2 P"
+  shows "program_sums I (P1@Q) (P2@Q) (P@Q)"
+  apply (rule program_sumsI)
+  unfolding semantics_seq
+  apply (rule spmf_sums_bind1)
+  using assms unfolding program_sums_def by simp
+
+lemma spmf_sums_left_distrib1:
+  assumes "program_sums I [P1] [P2] P"
+  shows "program_sums I (P1#Q) (P2#Q) (P@Q)"
+  using assms spmf_sums_left_distrib by force
+
+(* lemma spmf_sums_If':
+  fixes P1 P2 :: "'mem program"
+  shows "program_sums
+  (P1 @ Assert e # T @ P2)
+  (P1 @ Assert (\<lambda>m. \<not> e m) # F @ P2)
+  (P1 @ (IfThenElse e T F) # P2)"
 proof -
   have sem1: "semantics [i] = semantics1 i" for i::"'mem instruction" by auto
   have "spmf_sums
@@ -808,17 +917,17 @@ proof -
     unfolding sem1
     by (rule spmf_sums_If)
   then show ?thesis by auto
-qed
+qed *)
 
 lemma spmf_sums_hoare:
   assumes "hoare A a B"
   assumes "hoare A b B"
-  assumes "\<And>m. A m \<Longrightarrow> spmf_sums (semantics a m) (semantics b m) (semantics c m)"
+  assumes "\<And>m. program_sums A a b c"
   shows "hoare A c B"
 proof (rule hoareI)
   fix m assume "A m"
   then have sums: "spmf_sums (semantics a m) (semantics b m) (semantics c m)"
-    using assms by simp
+    using assms unfolding program_sums_def by simp
   show "pred_spmf B (semantics c m)"
   proof (unfold pred_spmf_def, rule ballI, rename_tac m')
     fix m' assume "m' \<in> set_spmf (semantics c m)"
@@ -840,12 +949,22 @@ proof (rule hoareI)
   qed
 qed
 
-lemma if_merge_hoare:
+lemma spmf_sums_hoare':
+  assumes "hoare A a B1"
+  assumes "hoare A b B2"
+  assumes "\<And>m. program_sums A a b c"
+  assumes "\<forall>m. B1 m \<longrightarrow> B m"
+  assumes "\<forall>m. B2 m \<longrightarrow> B m"
+  shows "hoare A c B"
+  using spmf_sums_hoare assms apply auto
+  by -
+
+(* lemma if_merge_hoare:
   assumes "hoare A (P1 @ Assert e # T @ P2) B"
   assumes "hoare A (P1 @ Assert (\<lambda>m. \<not> e m) # F @ P2) B"
   shows "hoare A (P1 @ (IfThenElse e T F) # P2) B"
   using assms apply (rule spmf_sums_hoare)
-  by (rule spmf_sums_If')
+  by (rule spmf_sums_If') *)
 
 
 

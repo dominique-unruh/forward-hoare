@@ -844,6 +844,7 @@ fun command_parser_no_proof toolkit =
   (Args.$$$ "config" |-- config_parser toolkit) ||
   (Args.$$$ "invariant" |-- declare_invariant_parser toolkit) ||
   (Args.$$$ "preserve" |-- preserve_command_parser toolkit) ||
+  (* (Args.$$$ "merge" |-- merge_parser tookit >> no_proof_obligation toolkit) || *)
   (hoare_triple_parser toolkit >> no_proof_obligation toolkit)
 
 fun command_parser_proof toolkit = 
@@ -852,6 +853,7 @@ fun command_parser_proof toolkit =
   (Args.$$$ "config" |-- config_parser toolkit >> dummy_proof_obligation toolkit) ||
   (Args.$$$ "invariant" |-- declare_invariant_parser toolkit >> dummy_proof_obligation toolkit) ||
   (Args.$$$ "preserve" |-- preserve_command_parser toolkit >> dummy_proof_obligation toolkit) ||
+  (* (Args.$$$ "merge" |-- merge_parser tookit) || *)
   (hoare_triple_parser toolkit)
 
 val _ = Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "Run a Hoare logic command (without proof obligation)"

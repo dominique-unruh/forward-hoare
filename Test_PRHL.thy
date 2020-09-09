@@ -23,11 +23,47 @@ lemma True proof
   (* TODO should not be needed *)
   have [independence]: "independent_of (\<lambda>mem. eval_var x mem < eval_var y mem) z"
     by (tactic \<open>PRHL.independence_tac \<^context> 1\<close>)
+  have [independence]: "independent_of (\<lambda>mem. eval_var x mem + eval_var y mem) z"
+    by (tactic \<open>PRHL.independence_tac \<^context> 1\<close>)
+  have [independence]: "independent_of (\<lambda>mem. eval_var z mem + 1) x"
+    by (tactic \<open>PRHL.independence_tac \<^context> 1\<close>)
+
 
   hoare invariant (prhl) startTest: \<open>INV[True]\<close>
-  hoare test: range 2t(0) pre startTest post test = default
-  hoare test2: extends test range 1 post test2 = default
-  hoare test3: extends test range 2t(1) post test3 = default
+  hoare ifstart: range 1 pre startTest post ifstart = default
+  
+  hoare iftrue: extends ifstart range 2t(0) post test = default
+(*   have [hoare_invi]: "{test \<Rightarrow> $x < $y}"
+    apply wp by simp *)
+
+  hoare iftruesetx: extends iftrue range 2t(1) post iftruesetx = default
+  have [hoare_invi]: \<open>{iftruesetx \<Rightarrow> $x \<ge> $y}\<close>
+    apply wp by auto
+
+  hoare iffalse: extends ifstart range 2f(0) post iffalse = default
+  have [hoare_invi]: "{iffalse \<Rightarrow> $x \<ge> $y}"
+    apply wp by simp
+
+  hoare afterif: range \<emptyset> pre iftruesetx (* also: iffalse *) post afterif = default
+(* TODO *)
+
+  have "\<exists>P. program_sums true (Block PROG[assert $x < $y; x := $x + $y] # PROG[])
+                              (Block PROG[assert \<not> $x < $y] # PROG[])
+                              P"
+    apply (rule exI)
+    apply (rule spmf_sums_left_distrib1)
+    by (rule spmf_sums_If)
+
+  have "\<exists>A c. hoare (A::memory invariant) c INV[$x \<ge> $y]"
+    apply (rule exI; rule exI)
+    using iftruesetx_valid iffalse_valid apply (rule spmf_sums_hoare')
+    apply (rule spmf_sums_right_distrib_UNIV1)
+    apply (rule spmf_sums_left_distrib1)
+    apply (rule spmf_sums_If)
+    using \<open>{iftruesetx \<Rightarrow> $x \<ge> $y}\<close> \<open>{iffalse \<Rightarrow> $x \<ge> $y}\<close> by auto
+
+
+
 
   hoare invariant (prhl) start': \<open>INV2[$x1=$y2 \<and> $y1=$x2] :: (memory,memory) rinvariant\<close>
   (* TODO: why do we need to enforce the type here? *)

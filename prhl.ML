@@ -11,7 +11,7 @@ struct
 
    Name space support for invariants, logics, hoare judgments
 
- *)
+*)
 
 open Forward_Hoare
 open Utils
@@ -32,6 +32,9 @@ fun dest_instructionT (Type(\<^type_name>\<open>instruction\<close>, [T])) = T
 fun programT T = instructionT T |> HOLogic.listT
 fun program2T T1 T2 = HOLogic.mk_prodT (programT T1, programT T2)
 fun dest_programT T = dest_listT T |> dest_instructionT
+fun exprT T T' = T --> T'
+fun dest_exprT _ (Type(\<^type_name>\<open>fun\<close>,[T,T'])) = (T,T')
+  | dest_exprT caller T = raise TYPE(caller^": dest_exprT", [T], [])
 fun invariantT T = T --> HOLogic.boolT
 fun invariant2T T1 T2 = T1 --> T2 --> HOLogic.boolT
 fun is_rinvT (Type(\<^type_name>\<open>fun\<close>, [_, (Type(\<^type_name>\<open>fun\<close>, [_, \<^typ>\<open>bool\<close>]))])) = true
@@ -97,6 +100,12 @@ fun indep_tac ctxt = let
 datatype rangestep = 
   Line of int 
   | If of int * bool * rangestep list
+
+datatype instruction = 
+  BasicInstruction of term
+  | IfThenElse of term * instruction list * instruction list
+  | Block of instruction list (* A block that is not represented in the final term, for internal purposes only *)
+
 type range1 = rangestep list
 type range1p = string * range1
 
@@ -107,17 +116,73 @@ fun shift_range1 (Line n :: range) = Line (n+1) :: shift_range1 range
   | shift_range1 (If (n,x,y) :: range) = If (n+1,x,y) :: shift_range1 range
   | shift_range1 [] = []
 
-  fun extract_if_side _ (Const(\<^const_name>\<open>IfThenElse\<close>,_) $ e $ thenProg $ elseProg) side = let
-    val memT = fastype_of e |> Term.domain_type
-    val e' = if side then e else Abs("mem", memT, \<^const>\<open>Not\<close> $ (e $ Bound 0))
-    val assert = Const(\<^const_name>\<open>Assert\<close>, (memT --> HOLogic.boolT) --> instructionT memT)
-                  $ e'
-    val sideprog = if side then thenProg else elseProg
-    val result = HOLogic.cons_const (instructionT memT) $ assert $ sideprog
-    in result end
-    | extract_if_side ctxt t _ =
-      error ("Expected an if-statement but got " ^ Syntax.string_of_term ctxt t)
+fun unshift_range1 (Line n :: range) = Line (n-1) :: unshift_range1 range
+  | unshift_range1 (If (n,x,y) :: range) = If (n-1,x,y) :: unshift_range1 range
+  | unshift_range1 [] = []
 
+fun term_to_instruction (Const(\<^const_name>\<open>IfThenElse\<close>,_) $ e $ p1 $ p2) =
+      IfThenElse (e, term_to_program p1, term_to_program p2)
+  | term_to_instruction (Const(\<^const_name>\<open>Block\<close>,_) $ p) =
+      Block (term_to_program p)
+  | term_to_instruction t =
+      BasicInstruction t
+
+and term_to_program prog = 
+  prog |> HOLogic.dest_list |> map term_to_instruction
+
+(* makes sure there are no Block's at toplevel *)
+fun flatten_blocks (Block p :: q) = flatten_blocks p @ flatten_blocks q
+  | flatten_blocks (i :: p) = i :: flatten_blocks p
+  | flatten_blocks [] = []
+
+(* instruction_to_term (term_to_instruction t) = t for well-typed t *)
+fun instruction_to_term _ (BasicInstruction t) = t
+  | instruction_to_term memT (IfThenElse (e, p1, p2)) = let
+    val eT = exprT memT HOLogic.boolT
+    val p1' = program_to_term memT p1
+    val p2' = program_to_term memT p2
+    val iT = instructionT memT
+    val pT = HOLogic.listT iT
+    in Const(\<^const_name>\<open>IfThenElse\<close>, eT --> pT --> pT --> iT) $ e $ p1' $ p2' end
+  | instruction_to_term memT (Block p) =
+    Const(\<^const_name>\<open>Block\<close>, programT memT --> instructionT memT) $ 
+      program_to_term memT p
+
+and program_to_term memT prog =
+  prog |> map (instruction_to_term memT) |> HOLogic.mk_list (instructionT memT)
+
+fun extract_if_side _ (Const(\<^const_name>\<open>IfThenElse\<close>,_) $ e $ thenProg $ elseProg) side = let
+  val memT = fastype_of e |> Term.domain_type
+  val e' = if side then e else Abs("mem", memT, \<^const>\<open>Not\<close> $ (e $ Bound 0))
+  val assert = Const(\<^const_name>\<open>Assert\<close>, (memT --> HOLogic.boolT) --> instructionT memT)
+                $ e'
+  val sideprog = if side then thenProg else elseProg
+  val result = HOLogic.cons_const (instructionT memT) $ assert $ sideprog
+  in result end
+  | extract_if_side ctxt t _ =
+    error ("Expected an if-statement but got " ^ Syntax.string_of_term ctxt t)
+
+fun if_side_assert side e = let
+  val memT = e |> fastype_of |> dest_exprT "if_side_assert" |> fst
+  val e' = if side then e else Abs("mem", memT, \<^const>\<open>Not\<close> $ (e $ Bound 0))
+  val assert = Const(\<^const_name>\<open>Assert\<close>, (memT --> HOLogic.boolT) --> instructionT memT) $ e'
+        |> BasicInstruction
+  in assert end
+
+
+fun extract_rangestep _ _ (prog:instruction list) (Line i) = (nth prog (i-1)
+        handle Subscript => error ("No " ^ string_of_int i ^ ". statement (only " ^ string_of_int (length prog) ^ " statements)"))
+  | extract_rangestep ctxt memT prog (If (i,side,range)) = let
+      val (IfThenElse (e, p1, p2)) = nth prog (i-1)
+      val p = if side then p1 else p2
+(*       val e' = if side then e else Abs("mem", memT, \<^const>\<open>Not\<close> $ (e $ Bound 0))
+      val assert = Const(\<^const_name>\<open>Assert\<close>, (memT --> HOLogic.boolT) --> instructionT memT) $ e'
+            |> BasicInstruction *)
+      val assert = if_side_assert side e
+    in extract_range1 ctxt memT (assert::p) (shift_range1 range) |> Block end
+    
+and extract_range1 ctxt memT prog range1 : instruction list =
+  map (extract_rangestep ctxt memT prog) range1
 
 
 (* Proves "instructions_commute a b" if possible  *)
@@ -126,16 +191,17 @@ fun swap_instructions ctxt (a:term) (b:term) : thm = let
   val prop = Const(\<^const_name>\<open>instructions_commute\<close>, T --> T --> HOLogic.boolT) $ a $ b |> HOLogic.mk_Trueprop
   fun tac ctxt = (resolve_tac ctxt @{thms commute_indep_Sample_Sample
 commute_indep_Sample_Set commute_indep_Set_Sample commute_indep_Set_Set 
-commute_indep_Assert_Set } 
+commute_indep_Assert_Set commute_indep_BlockSet_Set commute_indep_BlockAssert_Set
+} 
       THEN_ALL_NEW indep_tac ctxt) 1
   val thm = Goal.prove ctxt [] [] prop (fn {context=ctxt,...} => tac ctxt)
   in thm end
 
-(* insert_into_ordered ctxt (pos:rangestep, instr:term) (range:range1,prog:term)
+(* insert_sorted_into_sorted ctxt (pos:rangestep, instr:instruction) (range:range1,prog:instruction list)
 
   Inserts instr into prog, where instr is at position post, and prog is extracted using range.
   (If possible.)
-  Assumes that range is sorted.
+  Assumes that range and pos are sorted.
 
   Returns:
     range': range of the returned program
@@ -143,40 +209,71 @@ commute_indep_Assert_Set }
     thm: semantics (instr#prog) = semantics (prog')
 
  *)
-fun insert_into_ordered ctxt (pos,i) ([],_) : range1 * term * thm = let
-      val thm = infer ctxt [i] @{thm insert_into_ordered_singleton_aux}
-      in ([pos], HOLogic.mk_list (fastype_of i) [i], thm) end
-  | insert_into_ordered ctxt (pos,i) (pos'::pos's, is) = let
+fun insert_sorted_into_sorted ctxt memT (pos,i) ([],[]) : range1 * instruction list * thm = let
+      val thm = infer ctxt [instruction_to_term memT i] @{thm insert_into_ordered_singleton_aux}
+      in ([pos], [i], thm) end
+
+  | insert_sorted_into_sorted _ _ _ ([],_::_) = error "insert_sorted_into_sorted: range/program mismatch"
+  | insert_sorted_into_sorted _ _ _ (_::_,[]) = error "insert_sorted_into_sorted: range/program mismatch"
+
+  | insert_sorted_into_sorted ctxt memT (pos,i) (pos'::pos's, i'::i's) = let
     val n = linenum_of_rangestep pos
     val n' = linenum_of_rangestep pos' in
     if n = n'
     then case (pos,pos') of
         (If (_,side,range), If (_,side',range')) => let
             val _ = if side <> side' then error "Cannot join then/else branch of same if" else ()
-            val sideprog = extract_if_side ctxt i side
-            val (i',i's) = case is of Const(\<^const_name>\<open>Cons\<close>,_) $ i' $ i's => (i',i's)
-            val sideprog' = extract_if_side ctxt i' side
-            val (range,prog,thm) = join_with_ordered ctxt (shift_range range, sideprog)
-          in error ("nyi: joining ifs") end
-        | _ => error ("Duplicate instruction index " ^ string_of_int n) (* TODO: could be OK when merging if's *)
+            val (Block p) = i
+            val (Block p') = i'
+            (* thm: semantics (p@p') = semantics prog *)
+            val (range,prog,thm) = join_with_ordered ctxt memT (shift_range1 range, p)
+                                                               (shift_range1 range', p')
+            val range' = If (n,side,unshift_range1 range) :: pos's
+            val prog' = Block prog :: i's
+            (* thm': semantics(i # i' # i's) = semantics prog' *)
+            val thm' = @{thm insert_sorted_into_sorted_aux1} OF [thm]
+          in (range',prog',thm') end
+        | _ => error ("Duplicate instruction index " ^ string_of_int n)
     else if n < n' 
     then let
-      val thm = Drule.infer_instantiate' ctxt [i |> Thm.cterm_of ctxt |> SOME, is |> Thm.cterm_of ctxt |> SOME] @{thm insert_into_ordered_prepend_aux}
-      in (pos::pos'::pos's, HOLogic.cons_const (fastype_of i) $ i $ is, thm) end
+      val thm = infer ctxt [instruction_to_term memT i, program_to_term memT (i'::i's)] @{thm insert_into_ordered_prepend_aux}
+      in (pos::pos'::pos's, i::i'::i's, thm) end
 
-    else case is of
-      Const(\<^const_name>\<open>Cons\<close>,_) $ i' $ i's => let
+    else let
         (* semantics [i,i'] = semantics [i',i] *)
-        val swap_thm = swap_instructions ctxt i i'
+        val swap_thm = swap_instructions ctxt (instruction_to_term memT i) (instruction_to_term memT i')
         (* ii's_thm: semantics (i::i's) = semantics ii's *)
-        val (nn's, ii's, ii's_thm) = insert_into_ordered ctxt (pos,i) (pos's,i's)
-        val i'ii's = HOLogic.cons_const (fastype_of i') $ i' $ ii's
+        val (nn's, ii's, ii's_thm) = insert_sorted_into_sorted ctxt memT (pos,i) (pos's,i's)
+        val i'ii's = i' :: ii's
       
-        val thm0 = infer ctxt [i, i', i's, ii's] @{thm insert_into_ordered_aux}
+        val thm0 = infer ctxt [instruction_to_term memT i, instruction_to_term memT i', 
+                               program_to_term memT i's, program_to_term memT ii's] 
+                        @{thm insert_into_ordered_aux}
         val thm = thm0 OF [swap_thm, ii's_thm]
       in (pos'::nn's, i'ii's, thm) end
-    | _ => raise TERM("insert_into_ordered: not a list",[is])
   end
+
+(* Like insert_sorted_into_sorted but does not require that pos is sorted. *)
+and insert_into_sorted ctxt memT (pos,instr) (range,prog) : range1 * instruction list * thm = let
+  (* thm_instr': "semantics1 instr = semantics1 instr' *)
+  val (pos', instr', thm_instr') = sort_instruction ctxt memT (pos,instr)
+  (* thm_insert: "semantics (instr'#prog) = semantics prog' *)
+  val (range', prog', thm_insert) = insert_sorted_into_sorted ctxt memT (pos', instr') (range,prog)
+  (* thm: "semantics (instr'#prog) = semantics prog'" *)
+  val thm = @{thm insert_into_sorted_aux1} OF [thm_instr', thm_insert]
+  in (range', prog', thm) end
+
+and sort_instruction ctxt memT (Line n, instr) = 
+      (Line n, instr, infer ctxt [instruction_to_term memT instr] 
+            @{thm sort_instruction_aux1})
+  | sort_instruction ctxt memT (If (n,side,range), Block p) = let
+      (* thm_instr': semantics p = semantics p' *)
+      val (range',p',thm_p') = sort_program ctxt memT (shift_range1 range, p)
+      val pos' = If (n, side, unshift_range1 range')
+      (* thm: semantics1 (Block p) = semantics1 (Block p') *)
+      val thm = @{thm sort_instruction_aux2} OF [thm_p']
+      in (pos', Block p', thm) end
+  | sort_instruction _ _ (r,i) = error ("sort_instruction: " ^ \<^make_string> r ^ "; " ^ \<^make_string> i)
 
 (* join_with_ordered ctxt (range:range1, prog:term) (range':range1,prog':term)
 
@@ -191,19 +288,24 @@ fun insert_into_ordered ctxt (pos,i) ([],_) : range1 * term * thm = let
     thm: semantics (prog@prog') = semantics (prog')
 
  *)
-and join_with_ordered ctxt ([]:range1,prog:term) (range':range1,prog':term) : range1 * term * thm =
-  (range', prog', infer ctxt [prog] @{thm join_with_ordered_empty_aux})
-  | join_with_ordered ctxt (n::ns : range1, prog) (range':range1,prog':term) = (case prog of
-      Const(\<^const_name>\<open>Cons\<close>,_) $ i $ is => let
-        val (ns',is',thm_sort) = join_with_ordered ctxt (ns, is) (range',prog')
-        val (nns',iis',thm_insert) = insert_into_ordered ctxt (n,i) (ns',is')
-        val thm0 = infer ctxt [(*p*)is, (*s*)prog', (*q*)is', (*i*)i, (*r*)iis'] @{thm join_with_ordered_aux}
+
+and join_with_ordered ctxt memT ([]:range1,[]) (range':range1,prog':instruction list) :
+                 range1 * instruction list * thm =
+    (range', prog', infer ctxt [program_to_term memT prog'] @{thm join_with_ordered_empty_aux})
+  | join_with_ordered ctxt memT (n::ns : range1, i::is) (range':range1,prog':instruction list) = let
+        val (ns',is',thm_sort) = join_with_ordered ctxt memT (ns, is) (range',prog')
+        val (nns',iis',thm_insert) = insert_into_sorted ctxt memT (n,i) (ns',is')
+        val thm0 = infer ctxt [(*p*)program_to_term memT is, (*s*)program_to_term memT prog',
+                               (*q*)program_to_term memT is', (*i*)instruction_to_term memT i, 
+                               (*r*)program_to_term memT iis'] 
+                  @{thm join_with_ordered_aux}
         val thm = thm0 OF [thm_sort, thm_insert]
       in (nns', iis', thm) end
-    | _ => raise TERM("sort_program: not a list",[prog]))
+  | join_with_ordered _ _ ([],_::_) _ = error "join_with_ordered: program/range mismatch"
+  | join_with_ordered _ _ (_::_,[]) _ = error "join_with_ordered: program/range mismatch"
 
-fun sort_program ctxt (range,prog) : range1 * term * thm = let
-  val (range',prog',thm) = join_with_ordered ctxt (range,prog) ([],Const(\<^const_name>\<open>Nil\<close>, fastype_of prog))
+and sort_program ctxt memT (range,prog) : range1 * instruction list * thm = let
+  val (range',prog',thm) = join_with_ordered ctxt memT (range,prog) ([],[])
   val thm' = @{thm sort_program_aux} OF [thm]
   in (range',prog',thm') end
 
@@ -289,7 +391,7 @@ fun same_weight_tac ctxt = (* Raw_Simplifier.rewrite_goal_tac ctxt @{thms
     weight1_cons weight1_if weight1_Set}
 
 fun wp_tac ctxt = (* print_subgoal_tac ctxt "wp_tac" THEN' *) resolve_tac ctxt 
-  @{thms wp_IfThenElse_cons wp_Set_cons wp_Sample_cons wp_skip}
+  @{thms wp_IfThenElse_cons wp_Set_cons wp_Sample_cons wp_Block_cons wp_Assert_cons wp_skip}
 
 fun DETERM' tac i = DETERM (tac i)
 
@@ -368,6 +470,18 @@ structure Logic1 = Hoare_Logic(
 
   datatype range = Range of range1p |
     Range2 of range1p * range1p
+
+  fun extract_range ctxt (Range (progname,range)) = let
+        val prog = get_my_program ctxt progname
+        val memT = fastype_of prog |> dest_programT
+        val prog = term_to_program prog
+        val extr = extract_range1 ctxt memT prog range
+        val extr = program_to_term memT extr
+      in extr end
+    | extract_range ctxt (Range2 ((p1,r1),(p2,r2))) = let
+        val t1 = extract_range ctxt (Range (p1,r1))
+        val t2 = extract_range ctxt (Range (p2,r2))
+      in HOLogic.mk_prod (t1,t2) end
 
   fun program_term_typ options = 
     programT (#memory_type options |> the' (fn _ => "Memory type not set. Use \"Hoare config memory = <typ>\"."))
@@ -461,25 +575,6 @@ structure Logic1 = Hoare_Logic(
     ("rnd", postcondition_rnd_parse)
     ]
 
-  fun extract_rangestep _ prog (Line i) = ([nth prog (i-1)]
-          handle Subscript => error ("No " ^ string_of_int i ^ ". statement (only " ^ string_of_int (length prog) ^ " statements)"))
-    | extract_rangestep ctxt prog (If (i,side,range)) = let
-      val stepi = extract_rangestep ctxt prog (Line i) |> the_single
-      val sideprog = extract_if_side ctxt stepi side
-      in extract_range1 ctxt sideprog (shift_range1 range) end
-      
-  and extract_range1 ctxt prog range1 : term list = let
-    val prog = prog |> HOLogic.dest_list
-    in maps (extract_rangestep ctxt prog) range1 end
-
-  fun extract_range ctxt (Range (progname,range)) = let
-        val prog = get_my_program ctxt progname
-        val extr' = extract_range1 ctxt prog range
-      in HOLogic.mk_list (fastype_of prog |> dest_listT) extr' end
-    | extract_range ctxt (Range2 ((p1,r1),(p2,r2))) = let
-        val t1 = extract_range ctxt (Range (p1,r1))
-        val t2 = extract_range ctxt (Range (p2,r2))
-      in HOLogic.mk_prod (t1,t2) end
 
   val tilde = Parse.sym_ident :-- (fn "~" => Scan.succeed () | _ => Scan.fail) >> #1;
   val emptyset = Parse.sym_ident :-- (fn "\<emptyset>" => Scan.succeed () | _ => Scan.fail) >> #1;
@@ -534,11 +629,12 @@ structure Logic1 = Hoare_Logic(
     val hoare_append = (@{thm hoare_seq} OF [thm12, thm23])
     val prog = get_my_program ctxt prog12
     val progT = fastype_of prog
+    val memT = progT |> dest_programT
     val p12_p23 = Const(\<^const_name>\<open>append\<close>, progT --> progT --> progT) $ p12 $ p23
     (* p12@p23 \<equiv> p13 *)
     val p13_thm = append_conv (Thm.cterm_of ctxt p12_p23)
     val p13 = Thm.rhs_of p13_thm |> Thm.term_of
-    val (range13,_,sorted_thm) = sort_program ctxt (range12@range23, p13)
+    val (range13,_,sorted_thm) = sort_program ctxt memT (range12@range23, term_to_program p13)
     (* val _ = sorted_thm |> \<^print> *)
     val thm = @{thm join_hoare} OF [hoare_append, p13_thm, sorted_thm]
   in (Range (prog12,range13),thm) end
@@ -557,6 +653,8 @@ structure Logic1 = Hoare_Logic(
     val prog' = get_my_program ctxt prog12'
     val progT = fastype_of prog
     val progT' = fastype_of prog'
+    val memT = dest_programT progT
+    val memT' = dest_programT progT'
     val p12_p23 = Const(\<^const_name>\<open>append\<close>, progT --> progT --> progT) $ p12 $ p23
     val p12_p23' = Const(\<^const_name>\<open>append\<close>, progT' --> progT' --> progT') $ p12' $ p23'
     (* p12@p23 \<equiv> p13 *)
@@ -565,8 +663,8 @@ structure Logic1 = Hoare_Logic(
     (* p12'@p23' \<equiv> p13' *)
     val p13_thm' = append_conv (Thm.cterm_of ctxt p12_p23')
     val p13' = Thm.rhs_of p13_thm' |> Thm.term_of
-    val (range13,_,sorted_thm) = sort_program ctxt (range12@range23, p13)
-    val (range13',_,sorted_thm') = sort_program ctxt (range12'@range23', p13')
+    val (range13,_,sorted_thm) = sort_program ctxt memT (range12@range23, term_to_program p13)
+    val (range13',_,sorted_thm') = sort_program ctxt memT' (range12'@range23', term_to_program p13')
     (* val _ = sorted_thm |> \<^print> *)
     val thm = @{thm join_rhoare} OF [hoare_append, p13_thm, p13_thm', sorted_thm, sorted_thm']
   in (Range2 ((prog12,range13),(prog12',range13')),thm) end
