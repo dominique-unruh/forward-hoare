@@ -18,6 +18,8 @@ val pretty_range: Proof.context -> range -> Pretty.T
 val postcondition_generators: (string * (Proof.context->term->term->(term*(Proof.context->tactic)) context_parser)) list
 (* join_hoare ctxt invariant1 range12 invariant2 range23 invariant3 thm12 thm23 *)
 val join_hoare: Proof.context -> term -> range -> term -> range -> term -> thm -> thm -> (range*thm)
+(* merge_hoare ctxt precondition [range,postcondition,thm] *)
+val merge_hoare: Proof.context -> term -> (range * term * thm) -> unit
 val extract_range: Proof.context -> range -> term
 (* hoare_thm pre prog post *)
 val hoare_thm: Proof.context -> term -> term -> term -> term

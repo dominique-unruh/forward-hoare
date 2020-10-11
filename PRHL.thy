@@ -880,10 +880,7 @@ lemma spmf_sums_right_distrib_UNIV:
 lemma spmf_sums_right_distrib_UNIV1:
   assumes "program_sums true Q1 Q2 Q"
   shows "program_sums J (P#Q1) (P#Q2) (P#Q)"
-  using assms spmf_sums_right_distrib_UNIV 
-  apply (rule spmf_sums_right_distrib)
-   apply (rule assms(1))
-  by (simp add: hoare_def)
+  using assms spmf_sums_right_distrib_UNIV[where P="[P]"] by auto
 
 lemma spmf_sums_left_distrib:
   fixes P1 P2 P Q :: "'mem program"
@@ -956,8 +953,9 @@ lemma spmf_sums_hoare':
   assumes "\<forall>m. B1 m \<longrightarrow> B m"
   assumes "\<forall>m. B2 m \<longrightarrow> B m"
   shows "hoare A c B"
-  using spmf_sums_hoare assms apply auto
-  by -
+  using spmf_sums_hoare assms unfolding program_sums_def apply auto
+  by (smt hoare_def pred_spmf_def spmf_eq_0_set_spmf spmf_sums_def)
+
 
 (* lemma if_merge_hoare:
   assumes "hoare A (P1 @ Assert e # T @ P2) B"

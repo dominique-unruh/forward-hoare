@@ -6,7 +6,7 @@ theory Forward_Hoare
     and "Hoare" :: thy_decl
     and "Hoare'" :: thy_goal
 
-    and "range" "pre" "post" "extends" "program" "invariant_has" "config" "invariant" "preserve"
+    and "range" "pre" "post" "extends" "program" "invariant_has" "config" "invariant" "preserve" "merge"
 begin
 
 named_theorems hoare_untouched

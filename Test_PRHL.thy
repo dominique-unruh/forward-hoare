@@ -44,6 +44,9 @@ lemma True proof
   have [hoare_invi]: "{iffalse \<Rightarrow> $x \<ge> $y}"
     apply wp by simp
 
+
+  hoare merge afterif = iftruesetx + iffalse = default
+
   hoare afterif: range \<emptyset> pre iftruesetx (* also: iffalse *) post afterif = default
 (* TODO *)
 

@@ -709,6 +709,9 @@ structure Logic1 = Hoare_Logic(
   val subgoal_tactics = [("wp_tac",wp_tac),("independence_tac",independence_tac),
     ("same_weight_tac", same_weight_tac)]
 
+
+  fun merge_hoare ctxt precondition (args) = let
+  in error "nyi: merge_hoare" end
 )
 
 end

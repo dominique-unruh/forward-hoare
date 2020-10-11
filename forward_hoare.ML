@@ -244,7 +244,7 @@ fun add_hoare0decl binding i m context =
   map_hoares (HoareTable.define context (Morphism.binding m binding, hoare_morphism m i)) context
 (* fun get_invariant context name = Symtab.lookup (Hoare_Data.get context |> #invariants) name *)
 (* fun get_invariants context = Hoare_Data.get context |> #invariants *)
-fun get_invariant_by_id context = 
+fun get_invariant_by_id context : serial -> invariant = 
   InvTable.get_by_id (Hoare_Data.get context |> #invariants)
 (* get_invariant context name |> the' (fn _ => "Unknown invariant " ^ name) *)
 fun get_hoare_by_id context id = HoareTable.get_by_id (Hoare_Data.get context |> #hoares) id
@@ -482,6 +482,21 @@ fun define_invariant_command (toolkit:'a toolkit) logic name content (st:'a) : '
   val (invariant,st) = add_invariant toolkit logic name term st
   val st = declare_invariant_consequences toolkit logic invariant st
 in st end
+
+fun merge_command (toolkit:'a toolkit) binding args func (st:'a) : Proof.state = let
+  val context = #context toolkit st
+  val _ = if null args then error "merge_command with zero arguments" else ()
+  val args = map (read_hoare_name context) args
+  val precondition = hd args |> #precondition
+  val _ = if not (List.all (fn h => #precondition h = precondition) args)
+          then error "The hoare judgments to be merged have different preconditions" else ()
+  fun data_from_hoare ({range,postcondition,valid,...}:hoare) = let
+    val postcondition = get_invariant_by_id context postcondition |> #const
+  in (range,postcondition,valid) end
+  val precondition = get_invariant_by_id context precondition |> #const
+  val args' = map data_from_hoare args
+val _ = \<^print> (precondition,args')
+  in error "nyi" end
 
 fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
 
@@ -816,7 +831,11 @@ val post_parser = Args.$$$ "post" |-- Parse.binding --| Args.$$$ "=" -- make_pos
 fun hoare_triple_parser toolkit = name_parser -- extends_parser -- range_parser -- pre_parser -- post_parser
   >> (fn ((((name,extends),range),pre),(post,(make_post,make_post_args))) => 
         (hoare_command toolkit name extends range pre post make_post make_post_args))
-
+fun merge_parser toolkit = 
+  ((Parse.binding --| Args.$$$ "=") -- (Parse.enum1 "+" Parse.name_position)
+  -- (Args.$$$ "=" |-- make_post_parser))
+  >> (fn ((binding, args), func) => merge_command toolkit binding args func)
+  
 
 fun no_proof_obligation (toolkit:'a toolkit) (command:'a->Proof.state) st = let
   val state = command st
@@ -839,21 +858,21 @@ fun preserve_command_parser toolkit =
 
 (* TODO: add cuts and groups as needed *)
 fun command_parser_no_proof toolkit = 
-  (Args.$$$ "program" |-- declare_program_parser toolkit) ||
+  (Args.$$$ "program" |-- Parse.!!! (declare_program_parser toolkit)) ||
   (* (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit >> no_proof_obligation toolkit) || *)
-  (Args.$$$ "config" |-- config_parser toolkit) ||
-  (Args.$$$ "invariant" |-- declare_invariant_parser toolkit) ||
-  (Args.$$$ "preserve" |-- preserve_command_parser toolkit) ||
-  (* (Args.$$$ "merge" |-- merge_parser tookit >> no_proof_obligation toolkit) || *)
+  (Args.$$$ "config" |-- Parse.!!! (config_parser toolkit)) ||
+  (Args.$$$ "invariant" |-- Parse.!!! (declare_invariant_parser toolkit)) ||
+  (Args.$$$ "preserve" |-- Parse.!!! (preserve_command_parser toolkit)) ||
+  (Args.$$$ "merge" |-- Parse.!!! (merge_parser toolkit) >> no_proof_obligation toolkit) ||
   (hoare_triple_parser toolkit >> no_proof_obligation toolkit)
 
 fun command_parser_proof toolkit = 
-  (Args.$$$ "program" |-- declare_program_parser toolkit >> dummy_proof_obligation toolkit) ||
+  (Args.$$$ "program" |-- Parse.!!! (declare_program_parser toolkit >> dummy_proof_obligation toolkit)) ||
   (* (Args.$$$ "invariant_has" |-- invariant_has_parser toolkit) || *)
-  (Args.$$$ "config" |-- config_parser toolkit >> dummy_proof_obligation toolkit) ||
-  (Args.$$$ "invariant" |-- declare_invariant_parser toolkit >> dummy_proof_obligation toolkit) ||
-  (Args.$$$ "preserve" |-- preserve_command_parser toolkit >> dummy_proof_obligation toolkit) ||
-  (* (Args.$$$ "merge" |-- merge_parser tookit) || *)
+  (Args.$$$ "config" |-- Parse.!!! (config_parser toolkit >> dummy_proof_obligation toolkit)) ||
+  (Args.$$$ "invariant" |-- Parse.!!! (declare_invariant_parser toolkit >> dummy_proof_obligation toolkit)) ||
+  (Args.$$$ "preserve" |-- Parse.!!! (preserve_command_parser toolkit >> dummy_proof_obligation toolkit)) ||
+  (Args.$$$ "merge" |-- Parse.!!! (merge_parser toolkit)) ||
   (hoare_triple_parser toolkit)
 
 val _ = Outer_Syntax.command \<^command_keyword>\<open>hoare\<close> "Run a Hoare logic command (without proof obligation)"
