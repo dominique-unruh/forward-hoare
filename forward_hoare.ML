@@ -496,7 +496,7 @@ fun merge_command (toolkit:'a toolkit) binding args func (st:'a) : Proof.state =
   val precondition = get_invariant_by_id context precondition |> #const
   val args' = map data_from_hoare args
 val _ = \<^print> (precondition,args')
-  in error "nyi" end
+  in error "nyi merge_command" end
 
 fun tokens_parser stop : Token.src parser = Scan.many (fn tok => not (stop tok orelse Token.is_eof tok orelse Token.is_error tok))
 

@@ -112,6 +112,15 @@ type range1p = string * range1
 fun linenum_of_rangestep (Line n) = n
   | linenum_of_rangestep (If (n,_,_)) = n
 
+fun isSortedStep (Line _) = true
+  | isSortedStep (If (_,_,range)) = isSorted1 range
+
+and isSorted1 ([]:range1) = true
+  | isSorted1 ([step]) = isSortedStep step
+  | isSorted1 (step1::step2::range) = 
+      linenum_of_rangestep step1 < linenum_of_rangestep step2
+      andalso isSorted1 (step2::range)
+
 fun shift_range1 (Line n :: range) = Line (n+1) :: shift_range1 range
   | shift_range1 (If (n,x,y) :: range) = If (n+1,x,y) :: shift_range1 range
   | shift_range1 [] = []
@@ -711,7 +720,7 @@ structure Logic1 = Hoare_Logic(
 
 
   fun merge_hoare ctxt precondition (args) = let
-  in error "nyi: merge_hoare" end
+  in error ("nyi: merge_hoare" ^ \<^make_string> (precondition,args)) end
 )
 
 end
