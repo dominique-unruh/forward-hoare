@@ -5,7 +5,10 @@ begin
 
 definition "less_eq_card A B \<longleftrightarrow> (\<exists>f. inj_on f A \<and> range f \<subseteq> B)"
 
+text \<open>A raw variable consists of a getter :: \<^typ>\<open>'mem\<Rightarrow>'val\<close> and a setter \<^typ>\<open>'val\<Rightarrow>'mem\<Rightarrow>'mem\<close>\<close>
 type_synonym ('mem,'val) raw_var = \<open>('mem\<Rightarrow>'val) * ('val\<Rightarrow>'mem\<Rightarrow>'mem)\<close>
+text \<open>A raw untyped variable is like a raw variable, but the value set is chosen to be \<^typ>\<open>'mem\<close>
+  which is the largest possible set.\<close>
 type_synonym 'mem raw_untyped_var = \<open>'mem set * ('mem,'mem) raw_var\<close>
 
 definition \<open>valid_raw_var = (\<lambda>(R,g::'mem\<Rightarrow>'val,s::'val\<Rightarrow>'mem\<Rightarrow>'mem). 
